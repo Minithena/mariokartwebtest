@@ -94,10 +94,15 @@ All builds run on that Mac, because they need the disc.
   and can be deleted.
 - Hosted startup fix (2026-09-30): WASMFS requests paths such as `game//manifest.txt` and
   `game//DATA/sys/fst.bin`. The Python server normalises them, but R2 does not; the original Worker
-  returned 404 for those keys, leaving the game black after Start. The Worker now collapses repeated
-  separators after decoding the URL. `node --test tools/cloudflare/test/worker.test.mjs` covers
-  normalised GET/range reads, HEAD/isolation headers, conditional responses and malformed URLs
-  (5 tests pass). The fix is deployed; Access still protects the page and all game-file paths.
+  returned 404 for those keys. The Worker now collapses repeated separators after decoding the URL.
+  A second real-R2 bug used `'suffix' in range` on native descriptors which expose an undefined
+  suffix property, producing `Content-Range: bytes NaN-NaN/...`; use the optional values instead.
+  Both fixes are deployed. A localhost-only copy of the Worker using the actual remote R2 binding
+  reached the Mario Kart title screen at 60 FPS, and start/middle/suffix range bytes match local
+  disc files. Direct hosted-browser confirmation is separate from this proxy test.
+  `node --test tools/cloudflare/test/worker.test.mjs` covers these cases and opt-in diagnostics
+  (7 tests pass). `?log` forwards the page console to the Access-protected `/log` endpoint, in
+  bounded batches, readable with `wrangler tail mkw-web --format json`. Access remains enabled.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 

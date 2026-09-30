@@ -14,8 +14,28 @@ const TYPES = {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    // Pages opened with "?log" post their console here; locally serve.py prints it.
-    if (url.pathname === '/log') return new Response(null, { status: 204 });
+    // Opt-in diagnostics from pages opened with ?log. Access protects this route too.
+    // Keep each batch bounded and send it only to the Worker's live diagnostic stream.
+    if (url.pathname === '/log') {
+      if (request.method !== 'POST') return new Response(null, { status: 405 });
+      const reader = request.body?.getReader();
+      if (!reader) return new Response(null, { status: 204 });
+      const decoder = new TextDecoder();
+      let text = '', length = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > 65536) {
+          await reader.cancel();
+          return new Response('Diagnostic batch too large', { status: 413 });
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+      console.log('[browser]', text);
+      return new Response(null, { status: 204 });
+    }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
     }
@@ -55,8 +75,11 @@ export default {
       headers.set('Content-Length', String(object.size));
       return new Response(request.method === 'HEAD' ? null : object.body, { headers });
     }
-    const offset = 'suffix' in range ? object.size - range.suffix : range.offset ?? 0;
-    const length = 'suffix' in range ? range.suffix : range.length ?? object.size - offset;
+    // Native R2 descriptors expose optional properties even when their value is undefined.
+    // Testing `"suffix" in range` misclassifies ordinary offset ranges and produces NaN headers.
+    const suffix = typeof range.suffix === 'number' ? Math.min(range.suffix, object.size) : undefined;
+    const offset = range.offset ?? (suffix === undefined ? 0 : object.size - suffix);
+    const length = Math.min(range.length ?? suffix ?? object.size - offset, object.size - offset);
     headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
     headers.set('Content-Length', String(length));
     return new Response(request.method === 'HEAD' ? null : object.body, { status: 206, headers });

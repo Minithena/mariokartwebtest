@@ -48,6 +48,21 @@ test('HEAD retains WebAssembly type and cross-origin isolation headers', async (
   assert.equal(await response.text(), '');
 });
 
+test('native R2 range descriptors may expose an undefined suffix property', async () => {
+  const fake = bucket('game/DATA/sys/fst.bin');
+  const get = fake.get;
+  fake.get = async (...args) => {
+    const object = await get(...args);
+    object.range.suffix = undefined;
+    return object;
+  };
+  const response = await worker.fetch(new Request('https://game.test/game//DATA/sys/fst.bin', {
+    headers: { Range: 'bytes=2-6' },
+  }), { BUCKET: fake });
+  assert.equal(response.headers.get('Content-Range'), 'bytes 2-6/14');
+  assert.equal(response.headers.get('Content-Length'), '5');
+});
+
 test('an unchanged object returns 304', async () => {
   const response = await worker.fetch(new Request('https://game.test/WiiCompiled.js', {
     headers: { 'If-None-Match': '"test-etag"' },
@@ -58,4 +73,20 @@ test('an unchanged object returns 304', async () => {
 test('malformed percent encoding returns a client error', async () => {
   const response = await worker.fetch(new Request('https://game.test/game/%ZZ'), { BUCKET: bucket('none') });
   assert.equal(response.status, 400);
+});
+
+test('opt-in diagnostic batches are logged with a bounded request size', async (t) => {
+  const calls = [];
+  t.mock.method(console, 'log', (...args) => calls.push(args));
+  const response = await worker.fetch(new Request('https://game.test/log', {
+    method: 'POST', body: 'error test startup failure',
+  }), {});
+  assert.equal(response.status, 204);
+  assert.deepEqual(calls, [['[browser]', 'error test startup failure']]);
+  const tooLarge = await worker.fetch(new Request('https://game.test/log', {
+    method: 'POST', body: 'x'.repeat(65537),
+  }), {});
+  assert.equal(tooLarge.status, 413);
+  assert.equal(calls.length, 1);
+  assert.equal((await worker.fetch(new Request('https://game.test/log'), {})).status, 405);
 });
