@@ -21,7 +21,15 @@ export default {
     }
     if (url.pathname === '/') return Response.redirect(new URL('/WiiCompiled.html', url), 302);
 
-    const key = decodeURIComponent(url.pathname.slice(1));
+    // WASMFS joins its backend root and file paths with an extra slash (game//DATA/...).
+    // The local filesystem server collapses those separators; R2 keys are exact strings.
+    // Normalise here too, including the manifest's HEAD/read requests, before looking in R2.
+    let key;
+    try {
+      key = decodeURIComponent(url.pathname).replace(/\/+/g, '/').slice(1);
+    } catch {
+      return new Response('Invalid path', { status: 400 });
+    }
     let object;
     try {
       object = await env.BUCKET.get(key, { range: request.headers, onlyIf: request.headers });

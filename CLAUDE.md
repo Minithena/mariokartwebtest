@@ -92,6 +92,12 @@ All builds run on that Mac, because they need the disc.
   `python3 tools/deploy-web.py` after `stage-web.sh` (sends only changed files; `--worker` also
   deploys the Worker; needs `npx wrangler login`). An empty bucket `mkw-web` (ENAM) is left over
   and can be deleted.
+- Hosted startup fix (2026-09-30): WASMFS requests paths such as `game//manifest.txt` and
+  `game//DATA/sys/fst.bin`. The Python server normalises them, but R2 does not; the original Worker
+  returned 404 for those keys, leaving the game black after Start. The Worker now collapses repeated
+  separators after decoding the URL. `node --test tools/cloudflare/test/worker.test.mjs` covers
+  normalised GET/range reads, HEAD/isolation headers, conditional responses and malformed URLs
+  (5 tests pass). The fix is deployed; Access still protects the page and all game-file paths.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
