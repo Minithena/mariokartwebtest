@@ -33,7 +33,7 @@ All builds run on that Mac, because they need the disc.
 - **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
   backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
 - **M1 done** in Chrome 152 and Firefox 156: races run, the M0 ghost replays with an identical time.
-- Fork `Minithena/Wiicompiled`, branch `web` (pushed). This repo's commits are local only (not pushed).
+- Fork `Minithena/Wiicompiled`, branch `web`, and this repo (`Minithena/mariokartwebtest`) are pushed.
 - Build and run (tools in `../tools`: `emsdk`, `nodtool`; dotnet@8 via Homebrew, see memory):
   `source ../tools/emsdk/emsdk_env.sh && cmake --build wiicompiled/build-web --target WiiCompiled`,
   then `./tools/stage-web.sh` and `python3 tools/serve.py site/public`, open
