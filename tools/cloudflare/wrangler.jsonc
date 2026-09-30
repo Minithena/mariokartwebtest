@@ -1,0 +1,9 @@
+// Deploy with tools/deploy-web.sh (or: npx wrangler deploy -c tools/cloudflare/wrangler.jsonc).
+{
+  "name": "mkw-web",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "mkw-web-eu" }]
+}

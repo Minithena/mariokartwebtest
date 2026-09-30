@@ -54,12 +54,18 @@ All builds run on that Mac, because they need the disc.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
     `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
 - Open work, in the owner's order of interest:
-  1. Performance: pipelines now prewarm from `initial_pipeline_cache.db` behind the boot screen
-     (about 19 s on a first visit, 8 s later; `load_seed_pipelines` in aurora `pipeline_cache.cpp`).
-     Left: pipelines missing from the seed still compile inline on first use (a writable cache in
-     OPFS, or `CreateRenderPipelineAsync`, would fix that), and course select drops to about 36 FPS
-     on the Mushroom Cup preview (probably the video decode; not investigated).
-  2. M2: Cloudflare hosting behind Access.
+  1. Performance: pipelines prewarm behind the boot screen from `initial_pipeline_cache.db`
+     (about 19 s on a first visit, 8 s later) plus the pipelines this browser met before, which
+     aurora appends to `/persist/WiiCompiled/Cache/web_pipelines.bin` (`load_seed_pipelines`,
+     `load_web_pipeline_log` in `pipeline_cache.cpp`). Left: course select drops to about 36 FPS on
+     the Mushroom Cup preview (probably the video decode; not investigated).
+  2. M3 (players bring their own disc), then M4.
+- **M2 (hosting)**: Worker `mkw-web` (`tools/cloudflare/`) at
+  `https://mkw-web.athenaaa.workers.dev`, behind Cloudflare Access (owner's email, set in
+  the dashboard), serving the private R2 bucket `mkw-web-eu` (Western Europe). Upload with
+  `python3 tools/deploy-web.py` after `stage-web.sh` (sends only changed files; `--worker` also
+  deploys the Worker; needs `npx wrangler login`). An empty bucket `mkw-web` (ENAM) is left over
+  and can be deleted.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 

@@ -46,3 +46,6 @@ __pycache__/
 
 # Staged browser build (tools/stage-web.sh)
 site/public/WiiCompiled.*
+
+# What tools/deploy-web.py has uploaded
+site/deployed.json
