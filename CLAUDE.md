@@ -28,6 +28,39 @@ All builds run on that Mac, because they need the disc.
 - This repository: the web page, Cloudflare config, scripts and notes.
 - `tools/serve.py`: local server with the headers that threads need (see "Hosting").
 
+## Status (2026-09-30) — read first
+
+- **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
+  backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
+- **M1 done** in Chrome 152 and Firefox 156: races run, the M0 ghost replays with an identical time.
+- Fork `Minithena/Wiicompiled`, branch `web` (pushed). This repo's commits are local only (not pushed).
+- Build and run (tools in `../tools`: `emsdk`, `nodtool`; dotnet@8 via Homebrew, see memory):
+  `source ../tools/emsdk/emsdk_env.sh && cmake --build wiicompiled/build-web --target WiiCompiled`,
+  then `./tools/stage-web.sh` and `python3 tools/serve.py site/public`, open
+  `http://127.0.0.1:8000/WiiCompiled.html` (add `?muted`, `?log`, `?resetsave`).
+- Web design (all web code is in `wiicompiled/runtime/src/platform/web/` or behind `__EMSCRIPTEN__`):
+  - Guest threads are JSPI coroutines on one worker (`host_context.cpp`, `mkw_fibers.js`), not pthreads.
+  - Guest memory: `guest_flat_memory_wasm.cpp`, all accesses on the checked page-table path.
+  - Disc: WASMFS fetch backend with our own JS half (`mkw_fetchfs.js`; the stock one corrupts files)
+    reading `site/public/game/` via `game/manifest.txt` ("f <size> <path>").
+  - User state in OPFS at `/persist` (`web_platform.cpp`); the staged save seeds the NAND once.
+  - Firefox needs core WGSL: aurora `gx/shader.cpp` rewrites storage-pointer helpers on the web.
+  - `?log` forwards the page console to `serve.py` stdout — the way to debug the user's browsers.
+  - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it).
+- Open work, in the owner's order of interest:
+  1. Controls panel shows live bindings: publish keyboard bindings from
+     `settings_overlay.cpp` (check for changes in `Draw()`, send JSON with MAIN_THREAD_ASYNC_EM_ASM to
+     `window.mkwSetBindings`), and give the shell's `<kbd>` cells `data-bind` ids (GameCube button
+     keys a/b/x/y/start/z/l/r/up/down/left/right; axes PAD_AXIS_LEFT_X_POS..TRIGGER_R). Remapping
+     itself works in F10 → Controller settings and now persists.
+  2. Confirm everything shows as unlocked in game (untested; the patcher sets the documented flags).
+  3. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
+     `initial_pipeline_cache.db` and prewarm during start-up.
+  4. Very short key taps can be missed (input is read once per frame on the game thread).
+  5. M2: Cloudflare hosting behind Access.
+- Known: the page shows an original bunny backdrop; the owner's own picture is used when
+  `site/public/game/background.jpg` exists (gitignored, never commit it).
+
 ## Milestones
 
 ### M0. Native baseline on the Mac

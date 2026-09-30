@@ -3,7 +3,7 @@
 #
 #   site/public/WiiCompiled.{html,js,wasm,data}   copied from wiicompiled/build-web
 #   site/public/game/DATA                          symlink to wiicompiled/Assets/DATA (your disc)
-#   site/public/game/save/rksys.dat               copy of your native save, if there is one
+#   site/public/game/save/rksys.dat               copy of your native save with everything unlocked
 #   site/public/game/manifest.txt                  "d <dir>" / "f <size> <file>" list mounted at /game
 #
 # Everything staged here is game-derived and gitignored. Never commit it.
@@ -30,6 +30,8 @@ rm -rf "$public/game/save"
 if [ -f "$save" ]; then
     mkdir -p "$public/game/save"
     cp "$save" "$public/game/save/rksys.dat"
+    # Everything unlocked in the browser's copy (your native save is not touched).
+    python3 "$repo/tools/unlock-all.py" "$public/game/save/rksys.dat" -o "$public/game/save/rksys.dat"
 fi
 
 python3 - "$public/game" <<'PY'
