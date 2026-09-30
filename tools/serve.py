@@ -6,7 +6,8 @@ cross-origin isolated: Cross-Origin-Opener-Policy: same-origin and
 Cross-Origin-Embedder-Policy: require-corp. Python's http.server does not send them.
 
 It also answers HTTP range requests (single ranges), which the game's lazily fetched disc files
-rely on: without them every file would be downloaded whole on first use.
+rely on: without them every file would be downloaded whole on first use. POST /log prints what a
+page opened with "?log" forwards from its console.
 
 Usage: python3 tools/serve.py [folder] [--port 8000]
 It listens on 127.0.0.1 only, so the game stays on this machine.
@@ -73,6 +74,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 break
             outputfile.write(chunk)
             remaining -= len(chunk)
+
+    def do_POST(self):
+        # Pages opened with "?log" forward their console here (shell.html), so browsers that
+        # cannot be inspected from this machine's tools can still be debugged.
+        if self.path != "/log":
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        text = self.rfile.read(length).decode("utf-8", "replace")
+        agent = self.headers.get("User-Agent", "")
+        browser = "firefox" if "Firefox/" in agent else "chrome" if "Chrome/" in agent else "browser"
+        for line in text.splitlines():
+            print(f"[{browser}] {line}", flush=True)
+        self.send_response(204)
+        self.end_headers()
 
     def send_response(self, code, message=None):
         super().send_response(code, message)
