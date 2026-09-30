@@ -49,14 +49,14 @@ All builds run on that Mac, because they need the disc.
   - The controls panel follows F10 remapping: `PublishWebBindings()` in `settings_overlay.cpp` sends
     player 1's bindings as JSON to `window.mkwSetBindings` when they change; `<kbd data-bind>` cells
     use GameCube button keys (a, b, start, l, r, up...) or `axisN` (PAD_AXIS_* index).
-  - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it).
+  - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it); checked in
+    game: all characters, vehicles and cups are selectable.
+  - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
+    `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
 - Open work, in the owner's order of interest:
-  1. Confirm everything shows as unlocked in game (untested; the patcher sets the documented flags).
-  2. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
+  1. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
      `initial_pipeline_cache.db` and prewarm during start-up.
-  3. Very short key taps can be missed (input is read once per frame on the game thread). This
-     also makes the F10 rebind prompt ignore instant taps (seen with automated key presses).
-  4. M2: Cloudflare hosting behind Access.
+  2. M2: Cloudflare hosting behind Access.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
