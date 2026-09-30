@@ -93,9 +93,13 @@ try {
     assert.deepEqual(fromA.subarray(9), payload);
     assert.deepEqual(fromB.subarray(9), payload);
   }
-  isolated.udp(b.ip, bytes('must not cross rooms'));
+  // Upgrade requests can arrive in either order in production. Pick an address absent from
+  // the isolated room; sending to its own address would correctly loop back within that room.
+  const target = [a, b].find((client) => client.ip !== isolated.ip);
+  assert.ok(target);
+  isolated.udp(target.ip, bytes('must not cross rooms'));
   await delay(200);
-  assert.equal(b.queue.filter((m) => m[0] === 0x81).length, 0);
+  assert.equal(target.queue.filter((m) => m[0] === 0x81).length, 0);
   assert.equal(isolated.queue.filter((m) => m[0] === 0x81).length, 0);
   console.log(`PASS ${base}: room creation, WSS/WS admission, NAS login, fragmented GameSpy proof, cloned-save profiles, 360 datagrams, room isolation`);
 } finally {

@@ -79,6 +79,11 @@ All builds run on that Mac, because they need the disc.
   - Test: `cd tools/cloudflare/rooms && npm test` (9 unit tests), then with Wrangler running,
     `node test/live-smoke.mjs http://127.0.0.1:8787` (NAS/GameSpy proofs, cloned-save profiles,
     360 bidirectional datagrams, room isolation). The same smoke script accepts the hosted URL.
+  - Deployment verified on 2026-09-30: `mkw-rooms.athenaaa.workers.dev` is enabled with the
+    owner's explicit approval; the live protocol smoke passes. The updated game build is uploaded
+    to `mkw-web-eu`; both its page and WASM still redirect unauthenticated visitors to Access.
+    R2's public URL is disabled and it has no custom public domains. Web and native builds pass;
+    all 8 configured native CTest checks pass. The source is pushed to the existing branches.
   - Room code is AGPL-3.0; its licence, source attribution and setup are in the room folder.
     No game-derived code or files may be included in that Worker or in git.
 - **M2 (hosting)**: Worker `mkw-web` (`tools/cloudflare/`) at
