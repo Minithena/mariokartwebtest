@@ -70,6 +70,17 @@ test('an unchanged object returns 304', async () => {
   assert.equal(response.status, 304);
 });
 
+test('only content-addressed packs and previews receive long-lived private caching', async () => {
+  for (const key of ['game/file-packs/' + 'a'.repeat(64) + '.bin', 'game/web-videos/' + 'b'.repeat(64) + '.thp']) {
+    const response = await worker.fetch(new Request('https://game.test/' + key), { BUCKET: bucket(key) });
+    assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
+  }
+  for (const key of ['game/manifest-v2.txt', 'WiiCompiled.js', 'game/DATA/files/test.szs', 'game/file-packs/mutable.bin']) {
+    const response = await worker.fetch(new Request('https://game.test/' + key), { BUCKET: bucket(key) });
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-cache');
+  }
+});
+
 test('malformed percent encoding returns a client error', async () => {
   const response = await worker.fetch(new Request('https://game.test/game/%ZZ'), { BUCKET: bucket('none') });
   assert.equal(response.status, 400);

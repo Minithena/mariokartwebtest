@@ -69,7 +69,9 @@ All builds run on that Mac, because they need the disc.
      the Mushroom Cup preview. The owner subsequently reported severe repeated Firefox menu lag,
      recovering after the mode-selection screen. Browser menu videos now use alternate frames
      at half the frame rate (about 30 FPS), with identical retained image bytes and playback duration.
-     This reduces required decoding work; the resulting Firefox frame rate still needs live confirmation.
+     The owner confirmed smoother menus, but still reported stutter and slow transitions into races.
+     A hosted trace showed a run of small staff-ghost reads roughly a second apart; the deployed loading
+     update packs small disc assets and reads ahead in videos. Actual post-update timing needs confirmation.
   3. M3 (players bring their own disc) is deferred at the owner's request.
 - Multiplayer details:
   - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
@@ -107,7 +109,7 @@ All builds run on that Mac, because they need the disc.
   reached the Mario Kart title screen at 60 FPS, and start/middle/suffix range bytes match local
   disc files. Direct hosted-browser confirmation is separate from this proxy test.
   `node --test tools/cloudflare/test/worker.test.mjs` covers these cases and opt-in diagnostics
-  (7 tests pass). `?log` forwards the page console to the Access-protected `/log` endpoint, in
+  (8 tests pass). `?log` forwards the page console to the Access-protected `/log` endpoint, in
   bounded batches, readable with `wrangler tail mkw-web --format json`. Access remains enabled.
 - Final startup correction: a hosted/cached HEAD response was yielding a zero-length manifest.
   The fetch backend now loads the manifest with one uncached GET and serves those same bytes to
@@ -121,7 +123,25 @@ All builds run on that Mac, because they need the disc.
   source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
   sessions. Original `Assets/DATA` and racing physics are not modified.
   Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and
-  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (5).
+  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (14).
+- Loading optimisation: `p [logicalPath, file-packs/hash.bin, offset, size]` records in manifest-v2
+  map 143 unchanged assets of at most 64 KiB each into one 2,777,464-byte immutable download.
+  The browser checks its SHA-256, shares the download, and serves file-relative slices. The pack
+  excludes saves; legacy clients retain the individual disc paths. Worker responses permit private
+  browser caching only for content-addressed packs and previews.
+  Video reads buffer four 1 MiB chunks ahead, refilling when only two remain; concurrent requests
+  share in-flight downloads, and failed prefetches retry on demand. SZS archives up to 16 MiB
+  download at the first header read to avoid serial range round trips. Tests cover concurrent
+  reads, corruption/bounds, retries, read-ahead, archive limits and file lifetime. This addresses
+  observed I/O stalls; it does not establish a stable 60 FPS rate in Firefox. The WebAssembly
+  build and 22 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
+  the actual remote R2 pack plus deployed loader were verified through a localhost-only Worker
+  proxy, including a staff-ghost read using just the manifest and pack requests.
+- Hosting check after the loading update found that the earlier Access app was absent and the
+  game page was reachable without login. Owner-only Access was restored, and unauthenticated
+  requests again redirect to login. Its current app ID is `14f2f28e-05ef-4083-87f5-8030e31beac0`;
+  the login team domain is now `athena-stuff.cloudflareaccess.com`. The reason for the previous
+  app removal was not determined. Verify Access after deployment; keep the room relay public.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 

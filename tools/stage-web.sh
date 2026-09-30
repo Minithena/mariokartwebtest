@@ -4,7 +4,7 @@
 #   site/public/WiiCompiled.{html,js,wasm,data}   copied from wiicompiled/build-web
 #   site/public/game/DATA                         symlink to the unchanged original disc
 #   site/public/game/save/rksys.dat               copy of your native save with everything unlocked
-#   site/public/game/manifest-v2.txt              files plus immutable browser-video aliases
+#   site/public/game/manifest-v2.txt              files plus immutable video and pack mappings
 #
 # Menu previews use half the video frames at the same playback speed to reduce browser decode
 # work. Pass --original-videos to stage the original clips instead.
@@ -46,7 +46,7 @@ import hashlib, json, os, sys
 from pathlib import Path
 game, original, shadow, cache = [Path(p).resolve() for p in sys.argv[1:]]
 def manifest(data_root, optimized):
-    lines, files, aliases = ["d DATA"], [], []
+    lines, files, aliases, small_files = ["d DATA"], [], [], []
     for base, top, prefix in ((data_root, 'sys', 'DATA/'), (data_root, 'files', 'DATA/'), (game, 'save', '')):
         if not (base / top).is_dir():
             continue
@@ -58,6 +58,8 @@ def manifest(data_root, optimized):
                 path = Path(root) / name
                 logical = rel + '/' + name
                 files.append(f'f {path.stat().st_size} {logical}')
+                if optimized and logical.startswith('DATA/') and 0 < path.stat().st_size <= 65536:
+                    small_files.append((logical, path))
                 if optimized and path.resolve().is_relative_to(cache) and path.suffix == '.thp':
                     digest = hashlib.sha256(path.read_bytes()).hexdigest()
                     target = game / 'web-videos' / (digest + '.thp')
@@ -66,7 +68,25 @@ def manifest(data_root, optimized):
                         # A hard link retains these bytes even when the conversion cache is replaced.
                         os.link(path.resolve(), target)
                     aliases.append('u ' + json.dumps([logical, 'web-videos/' + target.name]))
-    return '\n'.join(lines + files + aliases) + '\n'
+    packed = []
+    if optimized and small_files:
+        payload, index = bytearray(), []
+        for logical, path in small_files:
+            data = path.read_bytes()
+            index.append((logical, len(payload), len(data)))
+            payload.extend(data)
+        if len(payload) > 16 * 1024 * 1024:
+            raise ValueError('Small-file pack exceeds the browser size limit')
+        digest = hashlib.sha256(payload).hexdigest()
+        target = game / 'file-packs' / (digest + '.bin')
+        target.parent.mkdir(exist_ok=True)
+        if not target.exists():
+            temporary = target.with_suffix('.tmp')
+            temporary.write_bytes(payload)
+            temporary.replace(target)
+        packed = ['p ' + json.dumps([logical, 'file-packs/' + target.name, offset, size])
+                  for logical, offset, size in index]
+    return '\n'.join(lines + files + aliases + packed) + '\n'
 # Older running clients keep their original manifest/files. New clients capture the alias map
 # once per startup, so later deployments cannot mix frames from different video versions.
 (game / 'manifest.txt').write_text(manifest(original, False))

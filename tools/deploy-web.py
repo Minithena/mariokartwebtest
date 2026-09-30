@@ -34,8 +34,10 @@ def staged_files():
     with open(os.path.join(PUBLIC, "game", manifest_name)) as manifest:
         lines = manifest.read().splitlines()
     aliases = dict(json.loads(line[2:]) for line in lines if line.startswith("u "))
+    packed = {row[0]: row[1] for line in lines if line.startswith('p ') for row in [json.loads(line[2:])]}
     keys += ["game/" + aliases.get(line.split(" ", 2)[2], line.split(" ", 2)[2])
-             for line in lines if line.startswith("f ")]
+             for line in lines if line.startswith("f ") and line.split(' ', 2)[2] not in packed]
+    keys += ['game/' + key for key in dict.fromkeys(packed.values())]
     if os.path.isfile(os.path.join(PUBLIC, "game", "background.jpg")):
         keys.append("game/background.jpg")
     return keys

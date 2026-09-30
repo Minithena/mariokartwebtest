@@ -63,7 +63,10 @@ export default {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Resource-Policy': 'same-origin',
       'Content-Type': TYPES[key.split('.').pop()] ?? 'application/octet-stream',
-      'Cache-Control': 'private, no-cache',
+      // Content-addressed packs/previews never change at a given URL; browsers may retain
+      // their private copy. Manifests and ordinary game paths still revalidate normally.
+      'Cache-Control': /^game\/(?:web-videos\/[a-f0-9]{64}\.thp|file-packs\/[a-f0-9]{64}\.bin)$/.test(key)
+        ? 'private, max-age=31536000, immutable' : 'private, no-cache',
       'Accept-Ranges': 'bytes',
       ETag: object.httpEtag,
     });
