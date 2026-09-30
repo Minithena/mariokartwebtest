@@ -54,8 +54,11 @@ All builds run on that Mac, because they need the disc.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
     `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
 - Open work, in the owner's order of interest:
-  1. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
-     `initial_pipeline_cache.db` and prewarm during start-up.
+  1. Performance: pipelines now prewarm from `initial_pipeline_cache.db` behind the boot screen
+     (about 19 s on a first visit, 8 s later; `load_seed_pipelines` in aurora `pipeline_cache.cpp`).
+     Left: pipelines missing from the seed still compile inline on first use (a writable cache in
+     OPFS, or `CreateRenderPipelineAsync`, would fix that), and course select drops to about 36 FPS
+     on the Mushroom Cup preview (probably the video decode; not investigated).
   2. M2: Cloudflare hosting behind Access.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
