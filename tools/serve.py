@@ -5,6 +5,9 @@ Threads (pthreads) use SharedArrayBuffer, which browsers only allow on a page th
 cross-origin isolated: Cross-Origin-Opener-Policy: same-origin and
 Cross-Origin-Embedder-Policy: require-corp. Python's http.server does not send them.
 
+It also answers HTTP range requests (single ranges), which the game's lazily fetched disc files
+rely on: without them every file would be downloaded whole on first use.
+
 Usage: python3 tools/serve.py [folder] [--port 8000]
 It listens on 127.0.0.1 only, so the game stays on this machine.
 """
@@ -13,9 +16,13 @@ import argparse
 import functools
 import http.server
 import mimetypes
+import os
+import re
 
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("text/javascript", ".mjs")
+
+RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -25,6 +32,52 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
+
+    def send_head(self):
+        path = self.translate_path(self.path)
+        match = RANGE.match(self.headers.get("Range", "").strip())
+        if self.command != "GET" or not match or not os.path.isfile(path):
+            response = super().send_head()
+            return response
+        size = os.path.getsize(path)
+        first, last = match.groups()
+        if first:
+            start, end = int(first), int(last) if last else size - 1
+        else:
+            start, end = max(0, size - int(last or 0)), size - 1
+        end = min(end, size - 1)
+        if start >= size or start > end:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.end_headers()
+            return None
+        f = open(path, "rb")
+        f.seek(start)
+        self.send_response(206)
+        self.send_header("Content-Type", self.guess_type(path))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        self._remaining = end - start + 1
+        return f
+
+    def copyfile(self, source, outputfile):
+        remaining = getattr(self, "_remaining", None)
+        if remaining is None:
+            return super().copyfile(source, outputfile)
+        self._remaining = None
+        while remaining > 0:
+            chunk = source.read(min(remaining, 1 << 20))
+            if not chunk:
+                break
+            outputfile.write(chunk)
+            remaining -= len(chunk)
+
+    def send_response(self, code, message=None):
+        super().send_response(code, message)
+        if code == 200:
+            self.send_header("Accept-Ranges", "bytes")
 
 
 def main():
