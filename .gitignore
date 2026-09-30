@@ -1,0 +1,45 @@
+# This repository is PUBLIC. Nothing derived from the game may be committed:
+# no disc images, no extracted files, no translated C++, no compiled game
+# (.wasm/.js from the game build). See CLAUDE.md, "Rules".
+
+# Disc images and extracted game files
+*.iso
+*.rvz
+*.wbfs
+*.wia
+*.nkit
+*.ciso
+*.gcm
+*.gcz
+*.wad
+*.dol
+*.rel
+*.szs
+*.arc
+*.brres
+*.brsar
+*.breff
+*.thp
+*.bmg
+*.u8
+*.carc
+Assets/
+assets/
+DATA/
+
+# Translator output and builds
+generated/
+build/
+build-*/
+dist/
+out/
+
+# Compiled game for the browser (built locally, deployed straight from disk)
+*.wasm
+site/public/game/
+
+# Local tooling
+node_modules/
+.wrangler/
+.DS_Store
+__pycache__/
