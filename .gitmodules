@@ -1,0 +1,4 @@
+[submodule "wiicompiled"]
+	path = wiicompiled
+	url = https://github.com/Minithena/Wiicompiled.git
+	branch = web
