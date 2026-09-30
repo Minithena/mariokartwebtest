@@ -28,7 +28,7 @@ All builds run on that Mac, because they need the disc.
 - This repository: the web page, Cloudflare config, scripts and notes.
 - `tools/serve.py`: local server with the headers that threads need (see "Hosting").
 
-## Status (2026-09-30) — read first
+## Status (2026-10-01) — read first
 
 - **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
   backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
@@ -47,8 +47,11 @@ All builds run on that Mac, because they need the disc.
   - Firefox needs core WGSL: aurora `gx/shader.cpp` rewrites storage-pointer helpers on the web.
   - `?log` forwards the page console to `serve.py` stdout — the way to debug the user's browsers.
   - The controls panel follows F10 remapping: `PublishWebBindings()` in `settings_overlay.cpp` sends
-    player 1's bindings as JSON to `window.mkwSetBindings` when they change; `<kbd data-bind>` cells
+    player 1's bindings as JSON to `window.mkwSetBindings` when they change; `[data-bind]` buttons
     use GameCube button keys (a, b, start, l, r, up...) or `axisN` (PAD_AXIS_* index).
+    Click one to rebind through the existing capture/persistence path.
+    Keyboard rebinding and persistence after reload were verified in the browser. The sidebar
+    also has master volume and mute controls; volume applies while dragging and saves on release.
   - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it); checked in
     game: all characters, vehicles and cups are selectable.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
@@ -63,7 +66,10 @@ All builds run on that Mac, because they need the disc.
      (about 19 s on a first visit, 8 s later) plus the pipelines this browser met before, which
      aurora appends to `/persist/WiiCompiled/Cache/web_pipelines.bin` (`load_seed_pipelines`,
      `load_web_pipeline_log` in `pipeline_cache.cpp`). Left: course select drops to about 36 FPS on
-     the Mushroom Cup preview (probably the video decode; the owner said this slowdown is fine).
+     the Mushroom Cup preview. The owner subsequently reported severe repeated Firefox menu lag,
+     recovering after the mode-selection screen. Browser menu videos now use alternate frames
+     at half the frame rate (about 30 FPS), with identical retained image bytes and playback duration.
+     This reduces required decoding work; the resulting Firefox frame rate still needs live confirmation.
   3. M3 (players bring their own disc) is deferred at the owner's request.
 - Multiplayer details:
   - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
@@ -103,6 +109,19 @@ All builds run on that Mac, because they need the disc.
   `node --test tools/cloudflare/test/worker.test.mjs` covers these cases and opt-in diagnostics
   (7 tests pass). `?log` forwards the page console to the Access-protected `/log` endpoint, in
   bounded batches, readable with `wrangler tail mkw-web --format json`. Access remains enabled.
+- Final startup correction: a hosted/cached HEAD response was yielding a zero-length manifest.
+  The fetch backend now loads the manifest with one uncached GET and serves those same bytes to
+  C++. Empty/invalid manifests fail with a visible Reload/error screen. The hosted URL has been
+  observed mounting all 2038 game files; the owner subsequently reached the game menus.
+- Browser assets now use `game/manifest-v2.txt`. Optional `u [logicalPath, web-videos/hash.thp]`
+  records map only the selected menu videos to immutable files. Legacy manifest/disc paths stay
+  unchanged, so deployments do not replace video bytes in an already-running session.
+  `tools/web_menu_videos.py` stages 19 video-only previews, reducing them from 489.9 to 244.9 MB.
+  All linked frames/durations were validated and FFmpeg decoded-pixel hashes matched retained
+  source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
+  sessions. Original `Assets/DATA` and racing physics are not modified.
+  Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and
+  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (5).
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 

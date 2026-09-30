@@ -49,3 +49,7 @@ site/public/WiiCompiled.*
 
 # What tools/deploy-web.py has uploaded
 site/deployed.json
+
+# Generated browser-only menu videos and the symlink staging tree
+/site/web-videos/
+/site/web-data/

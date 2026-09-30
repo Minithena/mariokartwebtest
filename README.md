@@ -23,6 +23,13 @@ Then open `http://127.0.0.1:8000/WiiCompiled.html` (add `?muted`, `?log` or `?re
 `tools/serve.py` sends the cross-origin isolation headers a threaded WebAssembly build needs and
 listens on `127.0.0.1` only.
 
+Click a key in the controls sidebar to rebind it after starting the game. The sidebar also has
+a master volume slider and mute button; changes are saved in that browser.
+
+Staging prepares browser-only menu previews at about 30 FPS, preserving playback duration and
+the retained frames' image quality. Racing still targets 60 FPS. The extracted disc stays intact;
+use `./tools/stage-web.sh --original-videos` to stage the original previews instead.
+
 ## Private multiplayer
 
 Choose **Create room** in the page's controls, then **Copy invite**. Each player opens that link,

@@ -28,8 +28,14 @@ def staged_files():
     """Every key the page can fetch: the build, and the files game/manifest.txt lists."""
     keys = [f for f in PAGE_FILES if os.path.isfile(os.path.join(PUBLIC, f))]
     keys.append("game/manifest.txt")
-    with open(os.path.join(PUBLIC, "game", "manifest.txt")) as manifest:
-        keys += ["game/" + line.split(" ", 2)[2].rstrip("\n") for line in manifest if line.startswith("f ")]
+    manifest_name = "manifest-v2.txt" if os.path.isfile(os.path.join(PUBLIC, "game", "manifest-v2.txt")) else "manifest.txt"
+    if manifest_name != "manifest.txt":
+        keys.append("game/" + manifest_name)
+    with open(os.path.join(PUBLIC, "game", manifest_name)) as manifest:
+        lines = manifest.read().splitlines()
+    aliases = dict(json.loads(line[2:]) for line in lines if line.startswith("u "))
+    keys += ["game/" + aliases.get(line.split(" ", 2)[2], line.split(" ", 2)[2])
+             for line in lines if line.startswith("f ")]
     if os.path.isfile(os.path.join(PUBLIC, "game", "background.jpg")):
         keys.append("game/background.jpg")
     return keys
@@ -90,17 +96,33 @@ def main():
         return key, fp, result
 
     failures = 0
+    def phase(key):
+        if key == 'WiiCompiled.html': return 4
+        if key == 'WiiCompiled.js': return 3
+        if key in ('WiiCompiled.wasm', 'WiiCompiled.data'): return 2
+        if key.startswith('game/manifest'): return 1
+        return 0
+
+    done = 0
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        for done, (key, fp, result) in enumerate(pool.map(upload, todo), 1):
-            if result.returncode == 0:
-                state[key] = fp
-            else:
-                failures += 1
-                print("FAILED %s: %s" % (key, (result.stderr or result.stdout).strip()[-300:]))
-            if done % 50 == 0 or done == len(todo):
-                print("%d/%d" % (done, len(todo)), flush=True)
-                with open(STATE, "w") as f:  # saved as it goes, so a rerun resumes
+        # Upload immutable data first, then its manifest, then binaries/loader/page. Do not
+        # advertise a new manifest or page until all of the files it names are available.
+        for stage in range(5):
+            batch = [item for item in todo if phase(item[0]) == stage]
+            for key, fp, result in pool.map(upload, batch):
+                done += 1
+                if result.returncode == 0:
+                    state[key] = fp
+                else:
+                    failures += 1
+                    print("FAILED %s: %s" % (key, (result.stderr or result.stdout).strip()[-300:]))
+                if done % 50 == 0 or done == len(todo):
+                    print("%d/%d" % (done, len(todo)), flush=True)
+            if batch:
+                with open(STATE, "w") as f:
                     json.dump(state, f, indent=0, sort_keys=True)
+            if failures:
+                break
     if failures:
         sys.exit("%d uploads failed; run again to retry them" % failures)
     print("Done.")

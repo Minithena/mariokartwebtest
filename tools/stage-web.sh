@@ -2,10 +2,12 @@
 # Stage the browser build for local testing with tools/serve.py.
 #
 #   site/public/WiiCompiled.{html,js,wasm,data}   copied from wiicompiled/build-web
-#   site/public/game/DATA                          symlink to wiicompiled/Assets/DATA (your disc)
+#   site/public/game/DATA                         symlink to the unchanged original disc
 #   site/public/game/save/rksys.dat               copy of your native save with everything unlocked
-#   site/public/game/manifest.txt                  "d <dir>" / "f <size> <file>" list mounted at /game
+#   site/public/game/manifest-v2.txt              files plus immutable browser-video aliases
 #
+# Menu previews use half the video frames at the same playback speed to reduce browser decode
+# work. Pass --original-videos to stage the original clips instead.
 # Everything staged here is game-derived and gitignored. Never commit it.
 set -eu
 
@@ -21,6 +23,11 @@ mkdir -p "$public/game"
 for f in WiiCompiled.html WiiCompiled.js WiiCompiled.wasm WiiCompiled.data; do
     [ -f "$build/$f" ] && cp "$build/$f" "$public/"
 done
+python3 "$repo/tools/web_menu_videos.py" "$data" "$repo/site/web-data" "$repo/site/web-videos" "$@"
+if [ -e "$public/game/DATA" ] && [ ! -L "$public/game/DATA" ]; then
+    echo "refusing to replace non-symlink $public/game/DATA" >&2
+    exit 1
+fi
 ln -sfn "$data" "$public/game/DATA"
 
 # Your native save (licences, ghosts), copied so the browser starts from the same state. The page
@@ -34,23 +41,36 @@ if [ -f "$save" ]; then
     python3 "$repo/tools/unlock-all.py" "$public/game/save/rksys.dat" -o "$public/game/save/rksys.dat"
 fi
 
-python3 - "$public/game" <<'PY'
-import os, sys
-game = sys.argv[1]
-lines = ["d DATA"]
-files = []
-for top in ("DATA/sys", "DATA/files", "save"):
-    if not os.path.isdir(os.path.join(game, top)):
-        continue
-    for root, dirs, names in os.walk(os.path.join(game, top), followlinks=True):
-        dirs.sort()
-        rel = os.path.relpath(root, game)
-        lines.append("d " + rel)
-        for name in sorted(names):
-            path = os.path.join(root, name)
-            files.append("f %d %s" % (os.path.getsize(path), os.path.join(rel, name)))
-with open(os.path.join(game, "manifest.txt"), "w") as out:
-    out.write("\n".join(lines + files) + "\n")
+python3 - "$public/game" "$data" "$repo/site/web-data" "$repo/site/web-videos" <<'PY'
+import hashlib, json, os, sys
+from pathlib import Path
+game, original, shadow, cache = [Path(p).resolve() for p in sys.argv[1:]]
+def manifest(data_root, optimized):
+    lines, files, aliases = ["d DATA"], [], []
+    for base, top, prefix in ((data_root, 'sys', 'DATA/'), (data_root, 'files', 'DATA/'), (game, 'save', '')):
+        if not (base / top).is_dir():
+            continue
+        for root, dirs, names in os.walk(base / top, followlinks=True):
+            dirs.sort()
+            rel = prefix + Path(root).relative_to(base).as_posix()
+            lines.append('d ' + rel)
+            for name in sorted(names):
+                path = Path(root) / name
+                logical = rel + '/' + name
+                files.append(f'f {path.stat().st_size} {logical}')
+                if optimized and path.resolve().is_relative_to(cache) and path.suffix == '.thp':
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    target = game / 'web-videos' / (digest + '.thp')
+                    target.parent.mkdir(exist_ok=True)
+                    if not target.exists():
+                        # A hard link retains these bytes even when the conversion cache is replaced.
+                        os.link(path.resolve(), target)
+                    aliases.append('u ' + json.dumps([logical, 'web-videos/' + target.name]))
+    return '\n'.join(lines + files + aliases) + '\n'
+# Older running clients keep their original manifest/files. New clients capture the alias map
+# once per startup, so later deployments cannot mix frames from different video versions.
+(game / 'manifest.txt').write_text(manifest(original, False))
+(game / 'manifest-v2.txt').write_text(manifest(shadow, True))
 PY
 
 echo "Staged $(grep -c '^f ' "$public/game/manifest.txt") game files."
