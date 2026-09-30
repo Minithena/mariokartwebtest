@@ -53,13 +53,34 @@ All builds run on that Mac, because they need the disc.
     game: all characters, vehicles and cups are selectable.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
     `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
-- Open work, in the owner's order of interest:
-  1. Performance: pipelines prewarm behind the boot screen from `initial_pipeline_cache.db`
+- Current priorities (owner's latest direction: focus on multiplayer; defer M3 until asked):
+  1. Multiplayer: room implementation in `tools/cloudflare/rooms`, virtual sockets in
+     `runtime/src/platform/web/web_vnet.{cpp,h}`. Two local browser clients have completed login,
+     matchmaking, course voting and a shared race start (N64 DK's Jungle Parkway). Race completion
+     with both players actively driving and a test across two physical machines remain unverified.
+     The game retains its own inactivity disconnects: a parked client is not a valid endurance test.
+  2. Performance: pipelines prewarm behind the boot screen from `initial_pipeline_cache.db`
      (about 19 s on a first visit, 8 s later) plus the pipelines this browser met before, which
      aurora appends to `/persist/WiiCompiled/Cache/web_pipelines.bin` (`load_seed_pipelines`,
      `load_web_pipeline_log` in `pipeline_cache.cpp`). Left: course select drops to about 36 FPS on
-     the Mushroom Cup preview (probably the video decode; not investigated).
-  2. M3 (players bring their own disc), then M4.
+     the Mushroom Cup preview (probably the video decode; the owner said this slowdown is fine).
+  3. M3 (players bring their own disc) is deferred at the owner's request.
+- Multiplayer details:
+  - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
+    services and peer UDP datagrams travel over a WebSocket; no public Nintendo/Wiimmfi service
+    or native TCP/UDP access is involved. This is a relay, not WebRTC.
+  - Use the page's **Create room / Join room / Copy invite** controls before starting. In the game,
+    everyone chooses **Nintendo WFC → Worldwide → VS Race**; matching stays inside the invite.
+    Local pages use the room Worker on `127.0.0.1:8787`; a full `?room=ws://...` or `wss://...`
+    remains available for diagnostics. The hosted page uses `mkw-rooms.athenaaa.workers.dev`.
+  - Online browser tabs bypass Aurora's focus/hidden pause path. Its 100 ms event wait and GX
+    retries were slowing background clients enough to disconnect them. ImGui draws also scale
+    to the actual render attachment, fixing a resize-time WebGPU scissor crash.
+  - Test: `cd tools/cloudflare/rooms && npm test` (9 unit tests), then with Wrangler running,
+    `node test/live-smoke.mjs http://127.0.0.1:8787` (NAS/GameSpy proofs, cloned-save profiles,
+    360 bidirectional datagrams, room isolation). The same smoke script accepts the hosted URL.
+  - Room code is AGPL-3.0; its licence, source attribution and setup are in the room folder.
+    No game-derived code or files may be included in that Worker or in git.
 - **M2 (hosting)**: Worker `mkw-web` (`tools/cloudflare/`) at
   `https://mkw-web.athenaaa.workers.dev`, behind Cloudflare Access (owner's email, set in
   the dashboard), serving the private R2 bucket `mkw-web-eu` (Western Europe). Upload with

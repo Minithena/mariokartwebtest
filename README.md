@@ -23,6 +23,28 @@ Then open `http://127.0.0.1:8000/WiiCompiled.html` (add `?muted`, `?log` or `?re
 `tools/serve.py` sends the cross-origin isolation headers a threaded WebAssembly build needs and
 listens on `127.0.0.1` only.
 
+## Private multiplayer
+
+Choose **Create room** in the page's controls, then **Copy invite**. Each player opens that link,
+starts the game, and chooses **Nintendo WFC → Worldwide → VS Race**. Matchmaking stays inside the
+invite's room. The hosted game still requires its Cloudflare Access sign-in.
+
+For local testing, also start the room service in a second terminal:
+
+```sh
+cd tools/cloudflare/rooms
+npm ci
+npm run dev
+```
+
+Use separate browser profiles, or `127.0.0.1` for one player and `localhost` for the other, so each
+game has its own save. Online tabs keep running in the background, but the original game can
+disconnect a player who stays idle during a race.
+
+Two local clients have been verified through a shared race start. Full-race completion with both
+players driving and testing on separate physical machines are still pending. See the
+[room service instructions](tools/cloudflare/rooms/README.md) for the protocol tests and deployment.
+
 ## Private hosting
 
 `tools/cloudflare/` is a Cloudflare Worker that serves the staged build from a private R2 bucket,

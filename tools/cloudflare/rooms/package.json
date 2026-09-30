@@ -1,0 +1,12 @@
+{
+  "name": "mkw-rooms",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "dev": "wrangler dev --ip 127.0.0.1",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": { "wrangler": "4.145.0" }
+}
