@@ -46,18 +46,17 @@ All builds run on that Mac, because they need the disc.
   - User state in OPFS at `/persist` (`web_platform.cpp`); the staged save seeds the NAND once.
   - Firefox needs core WGSL: aurora `gx/shader.cpp` rewrites storage-pointer helpers on the web.
   - `?log` forwards the page console to `serve.py` stdout — the way to debug the user's browsers.
+  - The controls panel follows F10 remapping: `PublishWebBindings()` in `settings_overlay.cpp` sends
+    player 1's bindings as JSON to `window.mkwSetBindings` when they change; `<kbd data-bind>` cells
+    use GameCube button keys (a, b, start, l, r, up...) or `axisN` (PAD_AXIS_* index).
   - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it).
 - Open work, in the owner's order of interest:
-  1. Controls panel shows live bindings: publish keyboard bindings from
-     `settings_overlay.cpp` (check for changes in `Draw()`, send JSON with MAIN_THREAD_ASYNC_EM_ASM to
-     `window.mkwSetBindings`), and give the shell's `<kbd>` cells `data-bind` ids (GameCube button
-     keys a/b/x/y/start/z/l/r/up/down/left/right; axes PAD_AXIS_LEFT_X_POS..TRIGGER_R). Remapping
-     itself works in F10 → Controller settings and now persists.
-  2. Confirm everything shows as unlocked in game (untested; the patcher sets the documented flags).
-  3. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
+  1. Confirm everything shows as unlocked in game (untested; the patcher sets the documented flags).
+  2. Stutter: pipelines compile inline on the web and the pipeline cache is off; load
      `initial_pipeline_cache.db` and prewarm during start-up.
-  4. Very short key taps can be missed (input is read once per frame on the game thread).
-  5. M2: Cloudflare hosting behind Access.
+  3. Very short key taps can be missed (input is read once per frame on the game thread). This
+     also makes the F10 rebind prompt ignore instant taps (seen with automated key presses).
+  4. M2: Cloudflare hosting behind Access.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
