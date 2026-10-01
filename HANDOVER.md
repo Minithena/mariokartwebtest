@@ -88,6 +88,28 @@ CLAUDE.md, "Diagnostics".
 - The in-app pane renders only while it is displayed (no animation frames when hidden); real Chrome
   through the extension works, and the extension and pane together give two visible clients.
 
+## Stutter pass, 2026-10-01 night (fork `web` 143272a, pushed and deployed: wasm 122,019,929 bytes, hashes checked, Worker unchanged)
+
+A disc read blocks the whole game (the guest thread suspends on the fetch), so on the hosted site every
+file that is not yet downloaded costs one 0.4-0.5 s round trip. Changes, all in `mkw_fetchfs.js` unless noted:
+
+- **Final-lap music**: the first read of a course's `*_n.brstm` also starts a background fetch of its `*_f.brstm`
+  sibling (2-17 MiB, matched case-insensitively). Verified locally: `n_Circuit32_f.brstm` is requested with the `_n`.
+- **Next Grand Prix course**: the first read of a course file also fetches the next course of its cup (table
+  `NEXT_COURSE`; nitro cups are certain, the retro cup order is from memory). Locally the game used to read
+  the next course 7 s into the race; it is now fetched with the race load. Triggered on a data read, not on
+  `describe`: the game stats every course at boot and a first version prefetched ~35 MB from that.
+- **Streams up to 32 MiB** (was 8) are fetched in one request; the 21 MB Factory stream was going chunk by chunk.
+- **`[web-disc] read took N ms: <file> +offset (bytes)`** (dvd.cpp, `?log`, reads over 30 ms): a `?log` console
+  export from a hosted race now names the files behind lap and item hitches (known issues 8 and 9).
+
+Not changed: the 67 s cold-browser shader wait. Only ~350 of the 1,199 bundled pipelines are first used in the
+title and menu frames (`first_frame_used` below ~5000 in the seed); the boot gate (`UpdateBootShaderState` in
+`settings_overlay.cpp`) waits for all. Releasing it early is the obvious win, but unfinished pipelines may drop
+draws, so it needs a cold-browser test. The hot guest addresses in `[web-prof]` are idle waits
+(`OS::ReceiveMessage`, `GX::CopyDisp`), not CPU. In the hidden app pane, 200-600 ms stalls appear in the
+post-present step with ~10 ms of guest time; they may be pane throttling, so confirm in real Chrome.
+
 ## Known issues and what to do next
 
 In rough priority order:
