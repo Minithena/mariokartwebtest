@@ -36,6 +36,78 @@ The room relay was not changed or redeployed. Not yet opened in a browser on the
 
 ## Day-to-day commands
 
+### Local browser compatibility update (2026-10-01)
+
+Built and staged locally; **not deployed** by this change. The existing game data and saves were preserved.
+
+- The page's adapter probe and the renderer (`aurora-main/lib/webgpu/gpu.cpp`) both try
+  high-performance, browser-default, then low-power selection. Failure of the preferred request
+  no longer prevents an available default/integrated adapter from being used.
+- The generated loader sits in an inert HTML template until the asynchronous GPU probe finishes.
+  Browsers missing JSPI, WebGPU, isolation, or all three adapter choices do not download/compile
+  the large Wasm module. JSPI detection checks both callable `Suspending` and `promising` APIs.
+- Combined failures show all remedies. The adapter message no longer labels acceleration as the
+  cause. Details include each request result/error and both JSPI APIs; asynchronous adapter info
+  refreshes an already visible report. Clipboard rejection gets a manual-copy instruction.
+- Validation: web build succeeded; 76 frontend/hosting tests passed. Browser fixtures exercised
+  default and low-power page selection and the unsupported-browser gate. In a live browser test,
+  high-performance requests were deliberately forced to return null in both the page and loader
+  worker; the actual rebuilt game selected the browser-default adapter and rendered its title screen.
+- The reported RX 5700 XT machine was not tested. A driver/browser blocklist can still deny every
+  adapter. This runtime still requires JSPI for guest fibres; a non-JSPI/Asyncify build needs an
+  alternative fibre implementation and performance/memory validation, rather than a flag change.
+
+Follow-up compatibility work (local, not deployed):
+
+- A rejected enhanced device request now retries with a fresh adapter, core device limits and no
+  optional features. The renderer reads its enabled texture limit and BC-compression support from
+  the created device. Device-loss callbacks carry request generations so a late FailedCreation
+  from a rejected request cannot mark the replacement device as lost.
+- The initial pthread pool is eight instead of 24; PROXY_TO_PTHREAD permits additional workers
+  to be created through the browser main thread. The 512 MiB initial Wasm memory is unchanged.
+- The page probes persistent saving before loading the runtime. Denied/missing storage selects
+  the existing memory filesystem through MKW_WEB_SESSION_STORAGE, with a visible warning that
+  progress and settings are lost on reload/close. Binding guidance follows that storage mode.
+- Validation: web build and native aurora_core build succeeded; 84 frontend/hosting tests passed.
+  A Chromium browser test deliberately rejected enhanced device requirements and denied saving;
+  the repaired core-default device rendered the title/attract scene. Firefox 156 also loaded and
+  rendered the game on the same Apple-silicon Mac. These are startup/rendering checks, not full-race
+  or cross-machine acceptance.
+- Safari 27 passed feature detection and pipeline prewarm but failed at the first game scene with
+  `WebGPU error 2: encoder state is not valid`. A bounded command trace showed balanced pass
+  begin/end calls; operation scopes reported the failure at encoder finish. The cause is unresolved,
+  so Safari must not be called supported. The temporary tracing/scoping loaders were diagnostic
+  fixtures only and are excluded from the staged build. No WebGL backend was added.
+
+### Loading and multiplayer queue update (2026-10-01; local)
+
+Not deployed. `mkw_fetchfs.js` now separates related-file discovery from warmup state: reading a
+course that was prefetched by its predecessor continues warming the next Grand Prix course.
+Failed warmups can retry with 1–10 second backoff, and evicted files can be warmed again. Selected
+roster assets take the next free slot ahead of speculative course/music jobs; at most six race
+warmups run concurrently. New demand fetches request high priority and background fetches low
+priority; these are browser hints. Demand reads do not wait for a warmup scheduler slot and still
+share in-flight downloads.
+
+`web_vnet.cpp` uses a head-indexed incoming FIFO, releases consumed payloads immediately and
+compacts periodically. Each connected pump processes at most 128 packets and approximately
+256 KiB (one final packet can cross the byte threshold), leaving the rest queued. Socket calls and
+the per-frame pump continue draining it. The original 8,192-message/16 MiB limits, owned outgoing
+bytes, wire format and terminal full-drain/disconnect behaviour are preserved. Existing per-socket
+UDP overflow behaviour is unchanged; no new dropping or prioritisation of wire packets was added.
+
+Tests cover course-chain continuation, retry backoff, cache eviction, final-lap cache hits, bounded
+warmups, demand reads while warmups are stalled, and selected-asset priority. Network queue tests
+cover 6,000 mixed ordered messages, compaction/limits, byte accounting and send-buffer ownership.
+The standalone compiled socket adapter test delivers 1,310 ordered TCP payloads, checks both pump
+budgets and final data at disconnect. Run it after sourcing emsdk:
+`python3 tools/test_web_vnet_native.py`. No game data is used by that test. The relay remains
+unchanged. Full driven races across two physical machines remain unverified.
+Final checks: 98 frontend/hosting tests and 17 room relay tests passed; the socket harness and full
+web build succeeded. Only the normal compiled build is staged; test outputs use temporary directories.
+
+### Commands
+
 ```sh
 cd mariokartwebtest
 source ../tools/emsdk/emsdk_env.sh

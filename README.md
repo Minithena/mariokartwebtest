@@ -23,8 +23,21 @@ Then open `http://127.0.0.1:8000/WiiCompiled.html` (add `?muted`, `?log` or `?re
 `tools/serve.py` sends the cross-origin isolation headers a threaded WebAssembly build needs and
 listens on `127.0.0.1` only.
 
+The game needs both WebAssembly JSPI and a usable WebGPU adapter. For troubleshooting, first try
+current desktop Chrome or Edge and fully restart the browser after updating. A JSPI flag does not
+add the implementation to an older browser. Hardware acceleration being enabled also does not
+guarantee WebGPU is available: a driver blocklist or the platform can still prevent adapter access.
+The page and renderer try the high-performance adapter, the browser's default, then the low-power
+adapter. A failed browser requirement stops the loader before downloading and compiling the game.
+If enhanced GPU device creation fails, the renderer retries standard device limits without optional
+features. If browser saving is denied, the game can use temporary storage and shows a warning;
+progress and settings are then lost on reload or close.
+Check `chrome://gpu` or `edge://gpu` (WebGPU and Problems Detected), or Firefox's `about:support`
+(Graphics). The error page's **Technical details → Copy** includes the browser, both JSPI APIs,
+and the WebGPU adapter request result. A GPU model alone cannot identify the cause.
+
 Click a key in the controls sidebar to rebind it after starting the game. The sidebar also has
-a master volume slider and mute button; changes are saved in that browser.
+a master volume slider and mute button; changes are saved when browser storage is available.
 
 Staging prepares browser-only menu previews at about 30 FPS, preserving playback duration and
 the retained frames' image quality. Racing still targets 60 FPS. The extracted disc stays intact;
@@ -52,6 +65,11 @@ disconnect a player who stays idle during a race.
 Two local clients have been verified through a shared race start. Full-race completion with both
 players driving and testing on separate physical machines are still pending. See the
 [room service instructions](tools/cloudflare/rooms/README.md) for the protocol tests and deployment.
+
+The client processes incoming packets in bounded FIFO batches, so a backlog can be serviced over
+several socket calls without repeatedly shifting the entire queue. Race asset warmups use bounded
+requests, retry transient failures, and continue through successive Grand Prix courses. These changes
+do not alter the room wire protocol or remove Internet latency.
 
 ## Race benchmarks
 
