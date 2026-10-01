@@ -35,8 +35,9 @@ All builds run on that Mac, because they need the disc.
 - **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
   backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
 - **M1 done** in Chrome 152 and Firefox 156: races run, the M0 ghost replays with an identical time.
-- The runtime update is published in `Minithena/Wiicompiled`, branch `web`, at `7f747d7`.
-  This repository records the matching relay source, submodule revision and deployment results.
+- The direct-entry runtime is committed and pushed to `Minithena/Wiicompiled`, branch `web`, at
+  `66cf83a13053482a0b47a8ed5b39f0e6f39011cc`. The final WebAssembly build and staging passed;
+  hosted package integrity and browser results are recorded below.
 - Build and run (tools in `../tools`: `emsdk`, `nodtool`; dotnet@8 via Homebrew, see memory):
   `source ../tools/emsdk/emsdk_env.sh && cmake --build wiicompiled/build-web --target WiiCompiled`,
   then `./tools/stage-web.sh` and `python3 tools/serve.py site/public`, open
@@ -58,24 +59,43 @@ All builds run on that Mac, because they need the disc.
   - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it); checked in
     game: all characters, vehicles and cups are selectable.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
-    `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
+    `take_taps`), so quick taps reach the game and the F10 rebind prompt.
 - Current priorities (owner's latest direction: focus on multiplayer; defer M3 until asked):
-  1. Multiplayer: two fresh localhost origins on ports 8005 and 8006 both reached online character
-     select automatically, matched, and shared a Moo Moo Meadows 100cc race start. The lobby shows
-     named participants immediately; each participant has one paired lobby/game slot. Auto-join
-     follows the expected controller route through title, profile, WFC and VS menus to character
-     select, with a manual fallback. It does not accept generic prompts. No completed driven race or
-     cross-physical-laptop test is verified. A production R2/room invite reached character select
-     in Chromium's in-app browser after one Play click; the roster showed one participant in-game.
-     Five consecutive 3-second samples settled near 60 FPS with no frames above 25 ms. This does not
-     establish Firefox smoothness. The game retains its own inactivity disconnects, so a parked
-     client is not an endurance test.
+  1. Multiplayer direct entry: the old `web_auto_join.*` menu macro has been deleted, and `PADRead`
+     no longer invokes automation. A room invite's Play action now uses engine lifecycle hooks.
+     After `SectionManager::init`, `web_room_launch.cpp` loads the selected existing license and Mii
+     through the game's own services, then sets initial section 55 before scene resolution. Save
+     errors and missing profiles/Miis hand off to normal manual setup. The native section/page
+     construction and `OnInit` still run; only WFCConnect's initial active layer is omitted because
+     the web lobby owns connection presentation. On the first `Section::Update` after the input
+     holder reset, the runtime registers player 1, waits for pending FriendList data to clear,
+     invokes the real `RKNet::Controller::Init(1)`, waits for idle/error-free login, selects
+     Worldwide VS, and activates native `GlobeSearch` (8F), which opens Character Select (6B).
+     It also restores the native MainMenu non-UI Racedata, scenario, battle and category-4 setup.
+     ABI hooks keep the live `CpuContext` available across scheduler-yielding service calls, using a
+     scratch guest frame/backchain and restoring guest registers, FP state and TLS. This fixed a
+     repeat-login stack crash; simultaneous repeated startup passed. The flow synthesizes no input
+     or button callbacks, calls no automation from `PADRead`, and writes no saved consent settings.
+     Fresh localhost origins 8007 and 8008 each reached Character Select from one Play with real
+     controls. Two clients appeared in the roster, matched and voted, then reached the same N64
+     Bowser's Castle 100cc VS race intro. On the final build after the category/reset fix, Mario and
+     Luigi both entered a race on the GCN Peach Beach course; at 6 seconds both were active and
+     showed the peer. Logs had
+     section 68/network 6/error 0, and testing ended before idle timeout. A full driven race and
+     cross-physical-laptop test remain unverified. An earlier parked Bowser's Castle test disconnected
+     at section 79 after 1,823 idle frames with error 0, consistent with the game's idle timeout.
+     Continue-manually cancellation returned to the normal title path, and reload cleaned the roster
+     back to one lobby participant. Earlier 8005/8006 menu-macro checks are historical and do not
+     validate this flow.
   2. Performance: the browser rebuilds 1,199 pipeline recipes into GPU pipeline objects per page
      session. Browser/driver binary reuse is opaque, and no performance seed pruning has been done.
      Earlier pipeline warmup and menu frame-rate measurements are historical; do not present them as
      current browser smoothness. Firefox smoothness is not verified: a native Firefox screenshot and
      accessibility tree showed mismatched pages, and that test tab was closed. The renderer now
      resolves the current RAM texture again when a previously bound EFB copy has been evicted.
+     The apparent 4:3 direct-entry result on origin 8008 came from its saved 640×480 window size;
+     on origin 8007, manual and direct startup both used 854×480/native 1708×960 and rendered 16:9.
+     No missing title-scene aspect initialization was found.
      A hosted single-player Bowser's Castle first-race check rendered the starting HUD and minimap
      correctly. This did not reproduce the owner's exact scene-over-HUD corruption later on the
      course, so that screenshot's cause and resolution remain unconfirmed.
@@ -85,25 +105,26 @@ All builds run on that Mac, because they need the disc.
     services and peer UDP datagrams travel over a WebSocket; no public Nintendo/Wiimmfi service
     or native TCP/UDP access is involved. This is a relay, not WebRTC. Each participant occupies
     one paired lobby/game slot, and the lobby displays named participants immediately.
-  - Use **Create room / Join room / Copy invite** before starting. Auto-join follows the expected
-    controller route through title, profile, WFC and VS menus to character select, with a manual
-    fallback; it does not accept generic prompts. Add `?manual` to bypass auto-join, then choose
-    **Nintendo WFC → Worldwide → VS Race** yourself. Local pages use the room Worker at
+  - Use **Create room / Join room / Copy invite** before starting. Play uses engine-level direct
+    entry into online setup and character selection. Add `?manual` to continue through the native
+    title/profile/WFC menus yourself, then choose **Nintendo WFC → Worldwide → VS Race**. If the
+    existing save needs attention or no profile/Mii is available, direct entry also hands off to
+    normal manual setup. Local pages use the room Worker at
     `127.0.0.1:8787`; a full `?room=ws://...` or `?room=wss://...` remains available for
     diagnostics. The hosted page uses `mkw-rooms.athenaaa.workers.dev`.
   - Online browser tabs bypass Aurora's focus/hidden pause path. Its 100 ms event wait and GX
     retries were slowing background clients enough to disconnect them. ImGui draws also scale
     to the actual render attachment, fixing a resize-time WebGPU scissor crash.
-  - Tests: `cd tools/cloudflare/rooms && npm test` (17 checks); the web suites pass 56 JS checks:
-    fetch 27, room UI 4, relay 17 and asset Worker 8. Web and native builds pass, as do all 8
-    configured native CTest checks.
-  - Current deployment: relay version `5779cf00e4b44e90ab333e4be674e2f8` is deployed, and the
-    production live smoke passed lobby/roster/reservation cleanup, NAS, fragmented GameSpy,
-    cloned-save IDs, 360 datagrams and room isolation. The R2 upload completed (3 files, 122.2 MB);
-    hosted HTML and loader SHA-256 match local, and WASM Content-Length and ETag match the local
-    MD5. The hosted Chromium in-app-browser end-to-end test passed: one Play click reached online
-    character select, roster presence showed the participant in-game, and five 3-second samples
-    were near 60 FPS with no frame over 25 ms. This does not verify Firefox smoothness. Access is
+  - Final local verification: all 9 native CTest checks, 36 fetch/room-UI JS checks (27 + 9), and
+    4 emitter checks pass. The final WebAssembly build and staging passed.
+  - Current hosted direct-entry package: 3 files (122.5 MB) were deployed to the existing R2
+    bucket. Hosted HTML and loader SHA-256 match the staged files; WASM size is 122,061,464 bytes
+    and ETag `888640a9140a1ef729036827940f803a` matches local. The hosted Chromium in-app browser
+    reached Character Select with one Play, and the named roster showed the participant in-game.
+    Logs show guest direct boot at 10:22:34 UTC and ready at 10:22:43 UTC (~9.9 seconds from guest
+    boot, excluding the initial download). Firefox smoothness remains unverified. The relay was not
+    changed or redeployed; its earlier production smoke passed lobby/roster/reservation cleanup,
+    NAS, fragmented GameSpy, cloned-save IDs, 360 datagrams and room isolation. Access remains
     intentionally disabled for testing per the owner; no Access setting was changed.
   - Room code is AGPL-3.0; its licence, source attribution and setup are in the room folder.
     No game-derived code or files may be included in that Worker or in git.
@@ -137,7 +158,7 @@ All builds run on that Mac, because they need the disc.
   source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
   sessions. Original `Assets/DATA` and racing physics are not modified.
   Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and the fetch
-  frontend suite now has 27 checks; the room UI suite has 4.
+  frontend suite has 27 checks; the room UI suite now has 9.
 - Loading optimisation: `p [logicalPath, file-packs/hash.bin, offset, size]` records in manifest-v2
   map 143 unchanged assets of at most 64 KiB each into one 2,777,464-byte immutable download.
   The browser checks its SHA-256, shares the download, and serves file-relative slices. The pack
@@ -148,10 +169,12 @@ All builds run on that Mac, because they need the disc.
   cancellation prevents completed work from repopulating a freed file, and failed prefetches retry
   on demand. SZS archives up to 16 MiB download at the first header read to avoid serial range round
   trips. Tests cover concurrent reads, corruption/bounds, retries, streamed read-ahead, archive
-  limits and file lifetime. The WebAssembly build passes. Across the web suites, 56 JS checks pass:
-  fetch 27, room UI 4, relay 17 and asset Worker 8. All 143 packed payloads match their source bytes, and
-  the actual remote R2 pack plus deployed loader were verified through a localhost-only Worker
-  proxy, including a staff-ghost read using just the manifest and pack requests.
+  limits and file lifetime. The WebAssembly build passes. At the time of the original pack and
+  streaming validation, 56 JS checks passed across fetch (27), room UI (4), relay (17) and asset
+  Worker (8); the direct-entry build's current fetch and room-UI results are reported above. All 143
+  packed payloads match their source bytes, and the actual remote R2 pack plus deployed loader were
+  verified through a localhost-only Worker proxy, including a staff-ghost read using just the
+  manifest and pack requests.
 - Diagnostic `?log` launches enable `MKW_WEB_PERF`. `web_performance.cpp` reports frame counts,
   frames above 25/50/100 ms, average/maximum guest and graphics timings, and DVD read timing every
   three seconds. This is opt-in instrumentation to distinguish the remaining selection-menu
@@ -164,7 +187,8 @@ All builds run on that Mac, because they need the disc.
 - Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
   Access setting was changed during this work. Do not describe the current hosted page as
   Access-protected; see Rules above.
-- The overnight QA tabs, extra servers on ports 8004–8006 and diagnostic tail were closed.
+- All QA tabs and extra servers on ports 8007/8008 are closed; the original game server on port
+  8000 and room server on port 8787 were left alone.
   The original local game server on port 8000 and room server on port 8787 remain available.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
