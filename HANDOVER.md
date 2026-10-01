@@ -130,6 +130,20 @@ host). The guest runs its own `DVDOpen`, so the C++ DVD layer only sees reads; t
 once. No hook mechanism for translated functions exists yet. No read blocked during ~40 s of driving after the
 start, but that run did not prove an item was picked up.
 
+### Third pass: asynchronous pipeline prewarm (fork f2e90d4, deployed, hashes checked)
+
+Prewarm used one blocking `CreateRenderPipeline` per frame (`build_synchronous_pipelines_for_frame`, at least one
+per frame even over budget). On a cold GPU shader cache each takes ~50 ms, so the first-visit "Compiling shaders"
+screen took ~67 s in real Chrome. GX pipelines (1,193 of 1,199) now go through `CreateRenderPipelineAsync`
+(`gx::create_pipeline_async`, `build_pipeline_async` in `gx.cpp`; up to 24 in flight, finished in their callback,
+blocking create as the fallback if creation fails); draws that need one still in flight use the existing on-demand
+path. Verified: fresh origin, all 1,199 finish (2.0 s vs 3.1 s before), no failures, attract race renders, hosted
+page boots. **Not measured:** the gain on a truly cold GPU shader cache (the app pane's cache was already warm).
+Ask for a first-visit time from a friend's real Chrome, or try a fresh Chrome profile.
+
+Also learned: the quickest way to a stall list is `serve.py --latency-ms` plus `tee` of its output to a file;
+the pane's log reader filters on whole chunks, so a file with `grep` is easier. Hosted boot and menus: loader only.
+
 ## Known issues and what to do next
 
 In rough priority order:
