@@ -184,6 +184,25 @@ All builds run on that Mac, because they need the disc.
   2 MiB of each aliased menu preview. It starts during boot, uses two background jobs and totals
   about 62.96 MiB under the 64 MiB cap. Demand reads share the same resource cache and in-flight
   jobs; optional warmup failures retry on demand.
+- Bug-fix/performance pass (2026-10-01, uncommitted in the fork; hosted site NOT redeployed):
+  - Boot stall: the web-only `specialize_storage_pointer_params` (aurora `gx/shader.cpp`) used
+    `std::regex` on every shader (~6 ms native per shader). Replaced by a linear scan with identical
+    output (checked on the real helper text). Pipeline prewarm went from 9.1 s of ~3 FPS boot to
+    about 4-5 s wall time (mostly the game's own boot), with only ~150-180 ms spent building.
+  - Prewarm builds are now time-budgeted on the web (`pipeline_cache.cpp`: at most 6 ms in the idle
+    part of a frame, deferred when the frame is already long, never starved for >4 frames). The
+    prewarm log gains a "batches" line.
+  - Config bug: a 0-byte `Config.toml` in OPFS (tab closed/crashed while it was rewritten in place)
+    bricked the page with "No DVD root is configured" and was never repaired. Fixed three ways: the
+    web build no longer saves or honours window size/position (the page owns the canvas; each resize
+    rewrote the file), an empty file is rewritten with the defaults, and `dvd_root` is forced to
+    `/game/DATA` on the web.
+  - The watchdog line now also prints `heap=` and `used=`: peak used heap in a race is ~240 MB of
+    the 512 MB initial memory; growth never happens in normal play.
+  - Tried and rejected: `-sGROWABLE_ARRAYBUFFERS` breaks WebGPU (`setBindGroup` refuses resizable
+    buffers; the game dies at the first draw); `-sASSERTIONS=0` and fixed memory (no growth) gave no
+    measurable gain. Title-screen guest time varies about +-1.5 ms between page loads, so compare
+    only repeated runs of the same scene.
 - Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
   Access setting was changed during this work. Do not describe the current hosted page as
   Access-protected; see Rules above.
