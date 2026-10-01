@@ -195,6 +195,8 @@ game dies at the first draw), `-sASSERTIONS=0` and fixed memory without growth (
 - A fully driven multiplayer race and a two-machine test.
 - Hitches at the start of a new lap, and when new items appear or are used (reported by the owner,
   not yet diagnosed; see HANDOVER.md, known issues 8 and 9, for the likely causes and how to look).
+- Slower machines run the game in slow motion (a late frame is presented at once, with no catch-up), so
+  their friends see them rubberband; see HANDOVER.md, known issue 10, for the analysis and options.
 - The owner's scene-over-HUD corruption screenshot (later on a course) has not been reproduced.
 - Performance changes from 2026-10-01 were measured only in the app's browser pane; real Chrome via
   the extension was not connected.

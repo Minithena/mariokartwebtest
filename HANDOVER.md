@@ -120,7 +120,20 @@ In rough priority order:
    seen at race start, and a browser remembers them only for its next visit), and item models, effect
    archives or sounds read from the disc for the first time. Use `?log`, collect a race that uses many
    different items, and check whether the slow frames are `present` (pipeline) or `DVDReadPrio` (disc).
-10. M3 (players bring their own disc) is deferred at the owner's request.
+10. **Players on slower machines run in slow motion, which shows up as rubberbanding for their
+    friends** (reported by the owner: friends with low FPS are slower). Not a netcode problem. The game
+    steps its simulation once per presented frame, and `hle/vi.cpp` deliberately presents a late frame
+    at once instead of catching up ("keeps a heavy scene at e.g. 50 fps instead of hard 30"), so a
+    machine at 40 FPS runs the race at about two-thirds speed. The web build already renders at the
+    lowest setting (native 1x), so there is no cheap quality knob; the cost is mostly the game's own
+    code (~8-9 ms of CPU per frame on an Apple M5). Options, none built: get a friend's `?log` export
+    to see where their time goes (known issue 1); skip drawing some frames while behind so the
+    simulation keeps real time (saves only the encode and present cost, and has to leave alone
+    anything rendered into textures that later frames reuse; test with `?burn=<ms>` and compare the
+    race timer with wall-clock time); an on-screen "running at N% speed" indicator beside the FPS
+    counter; speed up the game code. Advice for affected players: Chrome, plugged in on high
+    performance, hardware acceleration on, other tabs closed.
+11. M3 (players bring their own disc) is deferred at the owner's request.
 
 ## Gotchas learned the hard way
 
