@@ -110,6 +110,26 @@ draws, so it needs a cold-browser test. The hot guest addresses in `[web-prof]` 
 (`OS::ReceiveMessage`, `GX::CopyDisp`), not CPU. In the hidden app pane, 200-600 ms stalls appear in the
 post-present step with ~10 ms of guest time; they may be pane throttling, so confirm in real Chrome.
 
+### Second pass: boot and menus under simulated latency (fork c3125ce, deployed; loader only, wasm unchanged)
+
+`python3 tools/serve.py site/public --latency-ms 450` delays every `/game/` response like a far-away host, so
+each blocking disc read shows as a `[web-disc]` line (a fast local disk hides them; the browser's own HTTP cache
+hides repeats on the hosted site, and on the hosted site from London the real cost of an uncached read was
+90-410 ms). Measured with it: boot and menus stalled ~13 s on serial reads (StaticR.rel 2.3 s as five chunks,
+HomeButton.arc 1.4 s, then single ~460 ms reads of a dozen start-up files, the title video start, the two
+fanfares and the picked character's kart-select model). Fixes in `mkw_fetchfs.js`: the nine start-up files are
+requested at once on mount, `.rel`/`.arc` up to 8 MiB are fetched whole, and the menu warm-up adds the title
+video start, `o_Crs_In_Fan`/`o_Start32_fan` and every `*-allkart.szs` (budget now 160 MiB). Result: boot plus
+menus show no read over 38 ms.
+
+Still there, found the same way: a race load reads about 12 opponent kart archives (`Race/Kart/<vehicle>_kart-<driver>.szs`,
+~130 KB each, 1,528 files / 178 MB in all, so they cannot be warmed) one after another, ~470 ms each at 450 ms
+latency, plus the course and the music stream: about 6.6 s on the loading screen there (maybe 2-3 s on the real
+host). The guest runs its own `DVDOpen`, so the C++ DVD layer only sees reads; the way in is to hook
+`ArchiveMgr::RequestLoadKartArchives` (0x80542210, queues every player's archive) and prefetch all the paths at
+once. No hook mechanism for translated functions exists yet. No read blocked during ~40 s of driving after the
+start, but that run did not prove an item was picked up.
+
 ## Known issues and what to do next
 
 In rough priority order:

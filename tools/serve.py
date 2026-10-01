@@ -9,7 +9,10 @@ It also answers HTTP range requests (single ranges), which the game's lazily fet
 rely on: without them every file would be downloaded whole on first use. POST /log prints what a
 page opened with "?log" forwards from its console.
 
-Usage: python3 tools/serve.py [folder] [--port 8000]
+Usage: python3 tools/serve.py [folder] [--port 8000] [--latency-ms 450]
+--latency-ms delays every /game/ response (except the manifests) to imitate a far-away host
+(the hosted site measured 0.4-0.5 s per request): every read the game blocks on then shows up as
+a "[web-disc] read took ..." line, which a fast local disk hides.
 It listens on 127.0.0.1 only, so the game stays on this machine.
 """
 
@@ -19,6 +22,7 @@ import http.server
 import mimetypes
 import os
 import re
+import time
 
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -27,6 +31,13 @@ RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    latency = 0.0
+
+    def do_GET(self):
+        if self.latency and self.path.startswith("/game/") and "manifest" not in self.path:
+            time.sleep(self.latency)
+        super().do_GET()
+
     def end_headers(self):
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
@@ -106,7 +117,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("folder", nargs="?", default="site/public")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--latency-ms", type=float, default=0.0)
     args = parser.parse_args()
+    Handler.latency = args.latency_ms / 1000.0
 
     handler = functools.partial(Handler, directory=args.folder)
     with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
