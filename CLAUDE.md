@@ -203,6 +203,17 @@ All builds run on that Mac, because they need the disc.
     buffers; the game dies at the first draw); `-sASSERTIONS=0` and fixed memory (no growth) gave no
     measurable gain. Title-screen guest time varies about +-1.5 ms between page loads, so compare
     only repeated runs of the same scene.
+- Stutter investigation (2026-10-01, Chrome 152, Apple M5, 60 Hz; diagnostics only, `?log`):
+  `[web-perf] slow frame` lines log each frame over 40 ms, aurora logs on-demand pipeline builds over
+  2 ms, and `[web-prof]` samples the guest's innermost indirect-call target every ~0.3 ms (6 s
+  windows; map addresses with `generated/guest_symbol_table.cpp`). Findings: steady racing is 60 FPS
+  with ~7 ms guest time (about 59% of the frame is the game's own pacing wait in `GX::CopyDisp`), the
+  busy time has no hotspot (`RaceScene::OnCalc` ~6%, `G3dProc` ~5%, then a long tail), no on-demand
+  pipeline builds, and mid-race hitches are about one frame over 25 ms per 3 s (mostly `present`).
+  The real hitches are scene transitions (first course load 1.3 s, later menu-to-race 300-390 ms
+  guest frames, still large when warm). Not yet tested on slower hardware. Open suspects: the game
+  paces on its own wall-clock VI timeline (`hle/vi.cpp`), not the display refresh, so 75/120/144 Hz
+  or 59.94 Hz displays can judder; one audio "output queue full" drop was seen in a race.
 - Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
   Access setting was changed during this work. Do not describe the current hosted page as
   Access-protected; see Rules above.
