@@ -90,6 +90,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def log_message(self, fmt, *args):
+        # Show the requested byte range: the game fetches its disc lazily, and which ranges a
+        # scene asks for is what decides what to warm ahead of time.
+        byte_range = self.headers.get("Range", "").replace("%", "%%")
+        super().log_message(fmt + (f" [{byte_range}]" if byte_range else ""), *args)
+
     def send_response(self, code, message=None):
         super().send_response(code, message)
         if code == 200:

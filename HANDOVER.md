@@ -72,6 +72,22 @@ Diagnostics added (all `?log`): per-frame time split, true busy time, slow-frame
 sampling profiler, slow NAND operations. `?burn=<ms>` and `?oldyield` exist for A/B tests. See
 CLAUDE.md, "Diagnostics".
 
+## Later on 2026-10-01 (not yet deployed or pushed)
+
+- **Lobby names in the game** work (see CLAUDE.md, "Lobby names in the game"). Needs a two-client look
+  on the hosted site after deploying.
+- **Race-start stalls on the hosted site**: the warm-up now covers the sound-archive blocks and race
+  archives a race fetches at load and at GO (CLAUDE.md, "Race-start warm-up"). Measured only by request
+  logs locally; the hosted effect is unmeasured. Mid-race, the next course (about 2.7 MiB) is still
+  fetched on demand, and a race still reads about 12 small kart archives one by one at load.
+- **First visit in a cold browser compiles shaders for ~67 s** (real Chrome, hosted): 1,199 pipelines,
+  the game waits on "Compiling shaders". A reload takes 2.6 s (Chrome's own shader cache). Idea: start
+  the game once the title/menu set is built and finish in the background, or say "first visit only".
+- OPFS allows one open handle per file, so a second page on the same origin cannot open
+  `web_pipelines.bin` ("new pipelines will not be remembered"); two-tab tests should use two origins.
+- The in-app pane renders only while it is displayed (no animation frames when hidden); real Chrome
+  through the extension works, and the extension and pane together give two visible clients.
+
 ## Known issues and what to do next
 
 In rough priority order:

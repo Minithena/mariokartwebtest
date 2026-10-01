@@ -96,6 +96,22 @@ All web code is in `wiicompiled/runtime/src/platform/web/` or behind `__EMSCRIPT
 - Race start: `NANDOpen` shadows the 2.8 MB save before a write open; on OPFS `copy_file` took ~330 ms
   twice, so the web build copies in 1 MiB chunks (`hle/storage/nand_api.cpp`, under 20 ms now).
 
+- Lobby names in the game (2026-10-01): MKW labels every built-in default Mii "Player" and gives it a
+  generic face (`Mii::Load` sets a flag at `mii+165` when the Mii's ID is in the default table at
+  `0x8024C4D0`; `MiiNameMsgPrinter` and the Racers/globe screens print the literal for flagged Miis),
+  and the web build has no Mii database, so every profile's Mii was a default one. When a lobby name is
+  set, `AddDatabaseMii` (`web_room_launch.cpp`) copies the profile's default record, with the name,
+  into slot 0 of the in-memory RFL database (`*(state+16)+4`, 74-byte records, ID at +0x18; flags byte
+  at `state+6972` low two bits must be clear), then flips the default table's IDs off in memory so a Mii
+  received from another player is not flagged either (received Miis are rebuilt as source 6 and looked
+  up in the default table). The saved licence and Mii ID are untouched and nothing is written to the
+  NAND. Verified with two clients (Chrome plus the app pane): both show both names on the Racers screen.
+- Race-start warm-up (2026-10-01): a hosted race stalled on blocking disc reads (about one round trip
+  each) at load and at GO, from the sound archive (`revo_kart.brsar` blocks at 19-22, 25-27 and
+  45-78 MiB) and the race archives. `mkw_fetchfs.js` now warms `Race/Common.szs`, `Scene/UI/Race.szs`,
+  `Race_E.szs` and those archive ranges, with a 128 MiB budget, and fetches `.brstm` music streams whole.
+  Found by running a Grand Prix against `serve.py`, which now logs the byte range of every request.
+
 ### Multiplayer
 
 - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
