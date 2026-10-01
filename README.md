@@ -34,7 +34,8 @@ use `./tools/stage-web.sh --original-videos` to stage the original previews inst
 
 Choose **Create room** in the page's controls, then **Copy invite**. Each player opens that link,
 starts the game, and chooses **Nintendo WFC → Worldwide → VS Race**. Matchmaking stays inside the
-invite's room. The hosted game still requires its Cloudflare Access sign-in.
+invite's room. Cloudflare Access is normally what keeps the hosted game private; the owner has
+switched it off for the current test window, so check its state before sharing a link.
 
 For local testing, also start the room service in a second terminal:
 
@@ -55,9 +56,11 @@ players driving and testing on separate physical machines are still pending. See
 ## Private hosting
 
 `tools/cloudflare/` is a Cloudflare Worker that serves the staged build from a private R2 bucket,
-with the same headers. It must stay behind Cloudflare Access (only the owner can sign in), since
-the bucket holds files from the disc. After staging, upload what changed:
+with the same headers. It is meant to stay behind Cloudflare Access (only the owner can sign in),
+since the bucket holds files from the disc. After staging, upload what changed:
 
 ```sh
 python3 tools/deploy-web.py            # add --worker to also deploy the Worker
 ```
+
+See [HANDOVER.md](HANDOVER.md) for the current state, what changed recently and what to do next.

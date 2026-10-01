@@ -32,213 +32,159 @@ All builds run on that Mac, because they need the disc.
 
 ## Status (2026-10-01) — read first
 
+A handover for whoever picks this up next is in [HANDOVER.md](HANDOVER.md).
+
 - **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
   backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
 - **M1 done** in Chrome 152 and Firefox 156: races run, the M0 ghost replays with an identical time.
-- The direct-entry runtime is committed and pushed to `Minithena/Wiicompiled`, branch `web`, at
-  `66cf83a13053482a0b47a8ed5b39f0e6f39011cc`. The final WebAssembly build and staging passed;
-  hosted package integrity and browser results are recorded below.
-- Build and run (tools in `../tools`: `emsdk`, `nodtool`; dotnet@8 via Homebrew, see memory):
-  `source ../tools/emsdk/emsdk_env.sh && cmake --build wiicompiled/build-web --target WiiCompiled`,
-  then `./tools/stage-web.sh` and `python3 tools/serve.py site/public`, open
-  `http://127.0.0.1:8000/WiiCompiled.html` (add `?muted`, `?log`, `?resetsave`).
-- Web design (all web code is in `wiicompiled/runtime/src/platform/web/` or behind `__EMSCRIPTEN__`):
-  - Guest threads are JSPI coroutines on one worker (`host_context.cpp`, `mkw_fibers.js`), not pthreads.
-  - Guest memory: `guest_flat_memory_wasm.cpp`, all accesses on the checked page-table path.
-  - Disc: WASMFS fetch backend with our own JS half (`mkw_fetchfs.js`; the stock one corrupts files)
-    reading `site/public/game/` via `game/manifest.txt` ("f <size> <path>").
-  - User state in OPFS at `/persist` (`web_platform.cpp`); the staged save seeds the NAND once.
-  - Firefox needs core WGSL: aurora `gx/shader.cpp` rewrites storage-pointer helpers on the web.
-  - `?log` forwards the page console to `serve.py` stdout — the way to debug the user's browsers.
-  - The controls panel follows F10 remapping: `PublishWebBindings()` in `settings_overlay.cpp` sends
-    player 1's bindings as JSON to `window.mkwSetBindings` when they change; `[data-bind]` buttons
-    use GameCube button keys (a, b, start, l, r, up...) or `axisN` (PAD_AXIS_* index).
-    Click one to rebind through the existing capture/persistence path.
-    Keyboard rebinding and persistence after reload were verified in the browser. The sidebar
-    also has master volume and mute controls; volume applies while dragging and saves on release.
-  - `tools/unlock-all.py` unlocks everything in the staged save (stage-web.sh runs it); checked in
-    game: all characters, vehicles and cups are selectable.
-  - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
-    `take_taps`), so quick taps reach the game and the F10 rebind prompt.
-- Current priorities (owner's latest direction: focus on multiplayer; defer M3 until asked):
-  1. Multiplayer direct entry: the old `web_auto_join.*` menu macro has been deleted, and `PADRead`
-     no longer invokes automation. A room invite's Play action now uses engine lifecycle hooks.
-     After `SectionManager::init`, `web_room_launch.cpp` loads the selected existing license and Mii
-     through the game's own services, then sets initial section 55 before scene resolution. Save
-     errors and missing profiles/Miis hand off to normal manual setup. The native section/page
-     construction and `OnInit` still run; only WFCConnect's initial active layer is omitted because
-     the web lobby owns connection presentation. On the first `Section::Update` after the input
-     holder reset, the runtime registers player 1, waits for pending FriendList data to clear,
-     invokes the real `RKNet::Controller::Init(1)`, waits for idle/error-free login, selects
-     Worldwide VS, and activates native `GlobeSearch` (8F), which opens Character Select (6B).
-     It also restores the native MainMenu non-UI Racedata, scenario, battle and category-4 setup.
-     ABI hooks keep the live `CpuContext` available across scheduler-yielding service calls, using a
-     scratch guest frame/backchain and restoring guest registers, FP state and TLS. This fixed a
-     repeat-login stack crash; simultaneous repeated startup passed. The flow synthesizes no input
-     or button callbacks, calls no automation from `PADRead`, and writes no saved consent settings.
-     Fresh localhost origins 8007 and 8008 each reached Character Select from one Play with real
-     controls. Two clients appeared in the roster, matched and voted, then reached the same N64
-     Bowser's Castle 100cc VS race intro. On the final build after the category/reset fix, Mario and
-     Luigi both entered a race on the GCN Peach Beach course; at 6 seconds both were active and
-     showed the peer. Logs had
-     section 68/network 6/error 0, and testing ended before idle timeout. A full driven race and
-     cross-physical-laptop test remain unverified. An earlier parked Bowser's Castle test disconnected
-     at section 79 after 1,823 idle frames with error 0, consistent with the game's idle timeout.
-     Continue-manually cancellation returned to the normal title path, and reload cleaned the roster
-     back to one lobby participant. Earlier 8005/8006 menu-macro checks are historical and do not
-     validate this flow.
-  2. Performance: the browser rebuilds 1,199 pipeline recipes into GPU pipeline objects per page
-     session. Browser/driver binary reuse is opaque, and no performance seed pruning has been done.
-     Earlier pipeline warmup and menu frame-rate measurements are historical; do not present them as
-     current browser smoothness. Firefox smoothness is not verified: a native Firefox screenshot and
-     accessibility tree showed mismatched pages, and that test tab was closed. The renderer now
-     resolves the current RAM texture again when a previously bound EFB copy has been evicted.
-     The apparent 4:3 direct-entry result on origin 8008 came from its saved 640×480 window size;
-     on origin 8007, manual and direct startup both used 854×480/native 1708×960 and rendered 16:9.
-     No missing title-scene aspect initialization was found.
-     A hosted single-player Bowser's Castle first-race check rendered the starting HUD and minimap
-     correctly. This did not reproduce the owner's exact scene-over-HUD corruption later on the
-     course, so that screenshot's cause and resolution remain unconfirmed.
-  3. M3 (players bring their own disc) is deferred at the owner's request.
-- Multiplayer details:
-  - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
-    services and peer UDP datagrams travel over a WebSocket; no public Nintendo/Wiimmfi service
-    or native TCP/UDP access is involved. This is a relay, not WebRTC. Each participant occupies
-    one paired lobby/game slot, and the lobby displays named participants immediately.
-  - Use **Create room / Join room / Copy invite** before starting. Play uses engine-level direct
-    entry into online setup and character selection. Add `?manual` to continue through the native
-    title/profile/WFC menus yourself, then choose **Nintendo WFC → Worldwide → VS Race**. If the
-    existing save needs attention or no profile/Mii is available, direct entry also hands off to
-    normal manual setup. Local pages use the room Worker at
-    `127.0.0.1:8787`; a full `?room=ws://...` or `?room=wss://...` remains available for
-    diagnostics. The hosted page uses `mkw-rooms.athenaaa.workers.dev`.
-  - Online browser tabs bypass Aurora's focus/hidden pause path. Its 100 ms event wait and GX
-    retries were slowing background clients enough to disconnect them. ImGui draws also scale
-    to the actual render attachment, fixing a resize-time WebGPU scissor crash.
-  - Final local verification: all 9 native CTest checks, 36 fetch/room-UI JS checks (27 + 9), and
-    4 emitter checks pass. The final WebAssembly build and staging passed.
-  - Current hosted direct-entry package: 3 files (122.5 MB) were deployed to the existing R2
-    bucket. Hosted HTML and loader SHA-256 match the staged files; WASM size is 122,061,464 bytes
-    and ETag `888640a9140a1ef729036827940f803a` matches local. The hosted Chromium in-app browser
-    reached Character Select with one Play, and the named roster showed the participant in-game.
-    Logs show guest direct boot at 10:22:34 UTC and ready at 10:22:43 UTC (~9.9 seconds from guest
-    boot, excluding the initial download). Firefox smoothness remains unverified. The relay was not
-    changed or redeployed; its earlier production smoke passed lobby/roster/reservation cleanup,
-    NAS, fragmented GameSpy, cloned-save IDs, 360 datagrams and room isolation. Access remains
-    intentionally disabled for testing per the owner; no Access setting was changed.
-  - Room code is AGPL-3.0; its licence, source attribution and setup are in the room folder.
-    No game-derived code or files may be included in that Worker or in git.
-- **M2 (hosting)**: Worker `mkw-web` (`tools/cloudflare/`) at
-  `https://mkw-web.athenaaa.workers.dev`, serving the private R2 bucket `mkw-web-eu` (Western
-  Europe). Cloudflare Access is normally used for privacy, but the owner intentionally disabled it
-  for the current test window; no Access setting was changed during this work (see Rules). Upload with
-  `python3 tools/deploy-web.py` after `stage-web.sh` (sends only changed files; `--worker` also
-  deploys the Worker; needs `npx wrangler login`). An empty bucket `mkw-web` (ENAM) is left over
-  and can be deleted.
-- Hosted startup fix (2026-09-30): WASMFS requests paths such as `game//manifest.txt` and
-  `game//DATA/sys/fst.bin`. The Python server normalises them, but R2 does not; the original Worker
-  returned 404 for those keys. The Worker now collapses repeated separators after decoding the URL.
-  A second real-R2 bug used `'suffix' in range` on native descriptors which expose an undefined
-  suffix property, producing `Content-Range: bytes NaN-NaN/...`; use the optional values instead.
-  Both fixes are deployed. A localhost-only copy of the Worker using the actual remote R2 binding
-  reached the Mario Kart title screen at 60 FPS, and start/middle/suffix range bytes match local
-  disc files. Direct hosted-browser confirmation is separate from this proxy test.
-  `node --test tools/cloudflare/test/worker.test.mjs` covers these cases and opt-in diagnostics
-  (8 tests pass). `?log` forwards the page console to `/log` in bounded batches, readable with
-  `wrangler tail mkw-web --format json`. The current Access state is recorded under Rules.
-- Final startup correction: a hosted/cached HEAD response was yielding a zero-length manifest.
-  The fetch backend now loads the manifest with one uncached GET and serves those same bytes to
-  C++. Empty/invalid manifests fail with a visible Reload/error screen. The hosted URL has been
-  observed mounting all 2038 game files; the owner subsequently reached the game menus.
-- Browser assets now use `game/manifest-v2.txt`. Optional `u [logicalPath, web-videos/hash.thp]`
-  records map only the selected menu videos to immutable files. Legacy manifest/disc paths stay
-  unchanged, so deployments do not replace video bytes in an already-running session.
-  `tools/web_menu_videos.py` stages 19 video-only previews, reducing them from 489.9 to 244.9 MB.
-  All linked frames/durations were validated and FFmpeg decoded-pixel hashes matched retained
-  source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
-  sessions. Original `Assets/DATA` and racing physics are not modified.
-  Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and the fetch
-  frontend suite has 27 checks; the room UI suite now has 9.
-- Loading optimisation: `p [logicalPath, file-packs/hash.bin, offset, size]` records in manifest-v2
-  map 143 unchanged assets of at most 64 KiB each into one 2,777,464-byte immutable download.
-  The browser checks its SHA-256, shares the download, and serves file-relative slices. The pack
-  excludes saves; legacy clients retain the individual disc paths. Worker responses permit private
-  browser caching only for content-addressed packs and previews.
-  Video reads stream four 1 MiB chunks ahead and publish each completed chunk immediately, without
-  waiting for the full 4 MiB response tail. Concurrent requests share in-flight downloads; lifecycle
-  cancellation prevents completed work from repopulating a freed file, and failed prefetches retry
-  on demand. SZS archives up to 16 MiB download at the first header read to avoid serial range round
-  trips. Tests cover concurrent reads, corruption/bounds, retries, streamed read-ahead, archive
-  limits and file lifetime. The WebAssembly build passes. At the time of the original pack and
-  streaming validation, 56 JS checks passed across fetch (27), room UI (4), relay (17) and asset
-  Worker (8); the direct-entry build's current fetch and room-UI results are reported above. All 143
-  packed payloads match their source bytes, and the actual remote R2 pack plus deployed loader were
-  verified through a localhost-only Worker proxy, including a staff-ghost read using just the
-  manifest and pack requests.
-- Diagnostic `?log` launches enable `MKW_WEB_PERF`. `web_performance.cpp` reports frame counts,
-  frames above 25/50/100 ms, average/maximum guest and graphics timings, and DVD read timing every
-  three seconds. This is opt-in instrumentation to distinguish the remaining selection-menu
-  hitch from one-time network loads; it is not itself a performance fix.
-- Menu warming fetches common menu/model archives, including `Font.szs`, `BackModel.szs` and
-  `o_Start2_32_fan.brstm`, the first 16 MiB of the sound archive in bounded ranges, and the first
-  2 MiB of each aliased menu preview. It starts during boot, uses two background jobs and totals
-  about 62.96 MiB under the 64 MiB cap. Demand reads share the same resource cache and in-flight
-  jobs; optional warmup failures retry on demand.
-- Bug-fix/performance pass (2026-10-01, uncommitted in the fork; hosted site NOT redeployed):
-  - Boot stall: the web-only `specialize_storage_pointer_params` (aurora `gx/shader.cpp`) used
-    `std::regex` on every shader (~6 ms native per shader). Replaced by a linear scan with identical
-    output (checked on the real helper text). Pipeline prewarm went from 9.1 s of ~3 FPS boot to
-    about 4-5 s wall time (mostly the game's own boot), with only ~150-180 ms spent building.
-  - Prewarm builds are now time-budgeted on the web (`pipeline_cache.cpp`: at most 6 ms in the idle
-    part of a frame, deferred when the frame is already long, never starved for >4 frames). The
-    prewarm log gains a "batches" line.
-  - Config bug: a 0-byte `Config.toml` in OPFS (tab closed/crashed while it was rewritten in place)
-    bricked the page with "No DVD root is configured" and was never repaired. Fixed three ways: the
-    web build no longer saves or honours window size/position (the page owns the canvas; each resize
-    rewrote the file), an empty file is rewritten with the defaults, and `dvd_root` is forced to
-    `/game/DATA` on the web.
-  - The watchdog line now also prints `heap=` and `used=`: peak used heap in a race is ~240 MB of
-    the 512 MB initial memory; growth never happens in normal play.
-  - Tried and rejected: `-sGROWABLE_ARRAYBUFFERS` breaks WebGPU (`setBindGroup` refuses resizable
-    buffers; the game dies at the first draw); `-sASSERTIONS=0` and fixed memory (no growth) gave no
-    measurable gain. Title-screen guest time varies about +-1.5 ms between page loads, so compare
-    only repeated runs of the same scene.
-- Stutter investigation (2026-10-01, Chrome 152, Apple M5, 60 Hz; diagnostics only, `?log`):
-  `[web-perf] slow frame` lines log each frame over 40 ms, aurora logs on-demand pipeline builds over
-  2 ms, and `[web-prof]` samples the guest's innermost indirect-call target every ~0.3 ms (6 s
-  windows; map addresses with `generated/guest_symbol_table.cpp`). Findings: steady racing is 60 FPS
-  with ~7 ms guest time (about 59% of the frame is the game's own pacing wait in `GX::CopyDisp`), the
-  busy time has no hotspot (`RaceScene::OnCalc` ~6%, `G3dProc` ~5%, then a long tail), no on-demand
-  pipeline builds, and mid-race hitches are about one frame over 25 ms per 3 s (mostly `present`).
-  The real hitches are scene transitions (first course load 1.3 s, later menu-to-race 300-390 ms
-  guest frames, still large when warm). Not yet tested on slower hardware. Open suspects: the game
-  paces on its own wall-clock VI timeline (`hle/vi.cpp`), not the display refresh, so 75/120/144 Hz
-  or 59.94 Hz displays can judder; one audio "output queue full" drop was seen in a race.
-- Frame loop and load fixes (2026-10-01, uncommitted to remote until deployed): the web render loop
-  polled with `emscripten_sleep` (map wait) and yielded with `emscripten_sleep(0)`; browsers clamp
-  nested timers to ~4 ms, so each frame lost ~4.7 ms. The map wait is now a promise resolved by the
-  MapAsync callback and the yield is a MessageChannel message. A/B under +9 ms synthetic load (same
-  scene): 46 FPS old vs 59 FPS new. Switches: `?burn=<ms>` adds CPU load per frame, `?oldyield`
-  restores the old waits. `?log` now also prints a per-frame split (guest/seal/encode/schedule
-  wait/yield, map latency, VI sleep, `busy_per_frame` = the real CPU load, ~6.5 ms in a race on the
-  M5), `[web-prof] slow frame` (what ran during each frame over 150 ms) and `[web-nand]` for NAND
-  operations over 20 ms. Race-start save shadowing (`NANDOpen` copying the 2.8 MB `rksys.dat` through
-  OPFS) took ~330 ms twice; it now copies in 1 MiB chunks (under 20 ms). Remaining race-load cost is
-  ~200 ms guest frames (`RaceScene::CreateAndInitInstances`, heap alloc, Mii models). The 1.5 s
-  frames at startup are the game's own StrapScene wait. The Worker now lets browsers keep
-  `game/DATA/*` for a day (`max-age=86400`) instead of revalidating every read; this is only in
-  effect after `deploy-web.py --worker`. Hosted TTFB was 0.4-0.5 s per request from the US east
-  coast (bucket is WEUR), so serial disc reads dominate loads on a far-away connection.
-- Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
-  Access setting was changed during this work. Do not describe the current hosted page as
-  Access-protected; see Rules above.
-- All QA tabs and extra servers on ports 8007/8008 are closed; the original game server on port
-  8000 and room server on port 8787 were left alone.
-  The original local game server on port 8000 and room server on port 8787 remain available.
-- Known: the page shows an original bunny backdrop; the owner's own picture is used when
+- **M2 done**: the build is hosted at `https://mkw-web.athenaaa.workers.dev` (see "Hosting").
+- **Multiplayer**: private invite rooms with direct entry into online setup work between two local
+  clients; a fully driven race and a test across two physical machines are still unverified.
+- **Performance**: steady racing is 60 FPS (about 6.5 ms of CPU per frame on an Apple M5); the
+  frame loop and race-start fixes below are in. Slower hardware is untested.
+- M3 (players bring their own disc) is deferred at the owner's request.
+- Source of truth for code: the fork `Minithena/Wiicompiled`, branch `web` (submodule
+  `wiicompiled/`), plus this repository's branch `claude/vigilant-ride-auy5y2`.
+
+### Build, run, test, deploy
+
+Tools live in `../tools` (`emsdk`, `nodtool`); dotnet@8 comes from Homebrew (keg-only: export
+`DOTNET_ROOT=/opt/homebrew/opt/dotnet@8/libexec`).
+
+```sh
+source ../tools/emsdk/emsdk_env.sh
+cmake --build wiicompiled/build-web --target WiiCompiled     # ~1.5 min incremental
+./tools/stage-web.sh                                         # copies the build, links the disc, writes manifests
+python3 tools/serve.py site/public                           # http://127.0.0.1:8000/WiiCompiled.html
+python3 tools/deploy-web.py [--worker]                       # uploads only changed files to R2 (needs wrangler login)
+```
+
+Page options: `?muted`, `?log` (diagnostics, below), `?resetsave`, `?manual` (skip direct entry),
+`?room=ws(s)://...`, `?burn=<ms>` (synthetic CPU load), `?oldyield` (old timer-based waits).
+Tests: `node --test tools/cloudflare/test/worker.test.mjs wiicompiled/runtime/src/platform/web/tests/*.test.mjs`
+(45), `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), the room relay suite in
+`tools/cloudflare/rooms`, and `ctest` in `wiicompiled/build-macos` (9).
+
+### How the web build works
+
+All web code is in `wiicompiled/runtime/src/platform/web/` or behind `__EMSCRIPTEN__`.
+
+- Guest threads are JSPI coroutines on one worker (`host_context.cpp`, `mkw_fibers.js`), not
+  pthreads. A switch costs about 3 µs.
+- Guest memory: `guest_flat_memory_wasm.cpp`, all accesses on the checked page-table path.
+  Peak used heap in a race is ~240 MB of the 512 MB initial memory; growth never happens.
+- Disc: WASMFS fetch backend with our own JS half (`mkw_fetchfs.js`; the stock one corrupts files)
+  reading `site/public/game/` via `game/manifest-v2.txt`.
+- User state in OPFS at `/persist` (`web_platform.cpp`); the staged save seeds the NAND once.
+  The web build does not save or honour window size/position, rewrites an empty `Config.toml`, and
+  forces `dvd_root` to `/game/DATA` (an empty file used to brick the page).
+- Firefox needs core WGSL: aurora `gx/shader.cpp` rewrites storage-pointer helpers on the web (with
+  a linear scan; the earlier `std::regex` version cost ~6 ms per shader and ~5 s of boot).
+- The controls panel follows F10 remapping: `PublishWebBindings()` in `settings_overlay.cpp` sends
+  player 1's bindings as JSON to `window.mkwSetBindings`; `[data-bind]` buttons use GameCube button
+  keys (a, b, start, l, r, up...) or `axisN`. The sidebar also has master volume and mute.
+- Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
+  `take_taps`). `tools/unlock-all.py` unlocks everything in the staged save.
+- Browsers without JSPI or WebGPU get a plain "This browser is missing: ..." message (Chrome 137+
+  works; Firefox ESR does not).
+- Pipeline prewarm: 1,199 bundled recipes plus this browser's own log are queued at boot and built
+  on the render thread within a per-frame time budget (`pipeline_cache.cpp`).
+- Render loop: the staging-buffer map wait is a promise resolved by the MapAsync callback and the
+  canvas yield is a MessageChannel message (`gfx/common.cpp`, `gfx/staging_map.hpp`, `aurora.cpp`).
+  Browsers clamp nested timers to ~4 ms, so the old `emscripten_sleep` polling cost every frame
+  ~4.7 ms; under +9 ms of synthetic load the same scene runs at 59 FPS instead of 46.
+- Race start: `NANDOpen` shadows the 2.8 MB save before a write open; on OPFS `copy_file` took ~330 ms
+  twice, so the web build copies in 1 MiB chunks (`hle/storage/nand_api.cpp`, under 20 ms now).
+
+### Multiplayer
+
+- Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
+  services and peer UDP datagrams travel over a WebSocket; no public Nintendo/Wiimmfi service or
+  native TCP/UDP access is involved. This is a relay, not WebRTC. Each participant occupies one
+  paired lobby/game slot and the lobby shows named participants immediately.
+- Use **Create room / Join room / Copy invite**, then Play: `web_room_launch.cpp` uses engine
+  lifecycle hooks (after `SectionManager::init`) to load the selected license and Mii through the
+  game's own services, set initial section 55, register player 1, run the real
+  `RKNet::Controller::Init(1)`, select Worldwide VS and activate native `GlobeSearch` (8F), which
+  opens Character Select (6B). It synthesizes no input, calls no automation from `PADRead` and
+  writes no saved consent settings. If the save needs attention or no profile/Mii exists it hands
+  off to normal manual setup; `?manual` skips direct entry. ABI hooks keep the live `CpuContext`
+  across scheduler-yielding service calls (fixed a repeat-login stack crash).
+- Verified: two fresh local origins reached Character Select from one Play, matched, voted and
+  entered the same race (N64 Bowser's Castle, GCN Peach Beach) with each peer visible; reload and
+  Continue-manually cancellation clean up the roster. A parked race disconnects after ~1,800 idle
+  frames, consistent with the game's own idle timeout.
+- Local pages use the room Worker at `127.0.0.1:8787`; the hosted page uses
+  `mkw-rooms.athenaaa.workers.dev`; `?room=ws://...` works for diagnostics.
+- Online tabs bypass Aurora's focus/hidden pause path (its 100 ms event wait and GX retries were
+  disconnecting background clients). ImGui draws scale to the real render attachment (fixed a
+  resize-time WebGPU scissor crash).
+- Room code is AGPL-3.0; licence, attribution and setup are in `tools/cloudflare/rooms`. No
+  game-derived code or files may be included in that Worker or in git.
+
+### Hosting and assets
+
+- Worker `mkw-web` (`tools/cloudflare/`) serves the private R2 bucket `mkw-web-eu` (Western Europe).
+  Access state: see Rules. Never create a Worker under a new name with wrangler (it would have no
+  Access); renames go through the dashboard. An empty leftover bucket `mkw-web` (ENAM) can be
+  deleted by the owner.
+- WASMFS requests paths such as `game//manifest.txt`; R2 keys are exact, so the Worker collapses
+  repeated separators. Range responses use the optional `offset/length/suffix` values (a
+  `'suffix' in range` test produced `bytes NaN-NaN`). `node --test tools/cloudflare/test/worker.test.mjs`
+  covers these.
+- The manifest is loaded with one uncached GET and the same bytes are served to C++; an empty or
+  invalid manifest shows a Reload/error screen. The hosted URL mounts all 2,038 game files.
+- `game/manifest-v2.txt`: `f <size> <path>` files, `u [logicalPath, web-videos/hash.thp]` immutable
+  menu-video previews (`tools/web_menu_videos.py` stages 19 video-only previews, 489.9 to 244.9 MB;
+  `./tools/stage-web.sh --original-videos` restores the originals), and
+  `p [logicalPath, file-packs/hash.bin, offset, size]` records that map 143 unchanged assets of at
+  most 64 KiB into one 2,777,464-byte immutable download (SHA-256 checked, shared, saves excluded).
+- Fetch backend: video reads stream four 1 MiB chunks ahead; SZS archives up to 16 MiB download at
+  the first header read; concurrent requests share in-flight downloads; freed files cannot be
+  repopulated; failed prefetches retry. Menu warming fetches common menu/model archives, the first
+  16 MiB of the sound archive and 2 MiB of each menu preview (~63 MiB, two background jobs, cap 64 MiB).
+- Caching: content-addressed packs/previews are `immutable` for a year; `game/DATA/*` (the
+  unmodified disc) is cached privately for a day; manifests, saves, page and loader revalidate.
+- Hosted TTFB measured 0.4-0.5 s per request from the US east coast (bucket is WEUR), so serial
+  disc reads dominate race loads on a far-away connection.
+- The page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
+### Diagnostics (`?log`)
+
+`?log` forwards the console to `serve.py` stdout (or `/log` on the Worker, readable with
+`wrangler tail mkw-web --format json`) and turns on, every 3 s: `[web-perf]` frame counts, frames
+over 25/50/100 ms, per-bucket timings, the present split (end_frame / schedule wait / yield), map
+latency, VI sleep and `busy_per_frame` (frame time minus every sleep: the real CPU load);
+`[web-perf] slow frame` for each frame over 40 ms; `[web-prof]` a sampling profile of the guest's
+innermost indirect-call target (map addresses with `generated/guest_symbol_table.cpp`) plus one
+line per frame over 150 ms; `[web-nand]` for NAND operations over 20 ms; a watchdog line with
+context switches, heap, used heap and switch latency. Only compare the same scene (title, attract
+video and race differ a lot) and repeat runs: page-load noise is about ±1.5 ms.
+
+Findings on an Apple M5, Chrome 152, 60 Hz: steady racing 60 FPS; mid-race hitches about one frame
+over 25 ms per 3 s; no on-demand pipeline builds; no single CPU hotspot (`RaceScene::OnCalc` ~6%,
+`G3dProc` ~5%). Race load is a few ~200 ms frames of real work (`RaceScene::CreateAndInitInstances`,
+heap alloc, Mii models); the 1.5 s frames at startup are the game's own StrapScene wait.
+
+Tried and rejected: `-sGROWABLE_ARRAYBUFFERS` (WebGPU `setBindGroup` refuses resizable buffers: the
+game dies at the first draw), `-sASSERTIONS=0` and fixed memory without growth (no measurable gain).
+
+### Open items and unverified
+
+- Slower hardware, Firefox smoothness, and non-60 Hz displays are untested. The game paces itself
+  on its own wall-clock VI timeline (`hle/vi.cpp`), not the display refresh, so 75/120/144 Hz or
+  59.94 Hz displays may judder (fix would tie presentation to the browser's frame callback).
+- One audio "output queue full" drop was seen in a race (a crackle, not lag).
+- A fully driven multiplayer race and a two-machine test.
+- The owner's scene-over-HUD corruption screenshot (later on a course) has not been reproduced.
+- Performance changes from 2026-10-01 were measured only in the app's browser pane; real Chrome via
+  the extension was not connected.
+
 ## Milestones
+
+The original plan, kept for the reasoning behind the design. M0-M2 are done and their outcome is
+in Status above; M3 and M4 are still open (M4 exists as the invite-room relay described there).
 
 ### M0. Native baseline on the Mac
 
