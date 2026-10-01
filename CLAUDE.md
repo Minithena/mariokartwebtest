@@ -214,6 +214,21 @@ All builds run on that Mac, because they need the disc.
   guest frames, still large when warm). Not yet tested on slower hardware. Open suspects: the game
   paces on its own wall-clock VI timeline (`hle/vi.cpp`), not the display refresh, so 75/120/144 Hz
   or 59.94 Hz displays can judder; one audio "output queue full" drop was seen in a race.
+- Frame loop and load fixes (2026-10-01, uncommitted to remote until deployed): the web render loop
+  polled with `emscripten_sleep` (map wait) and yielded with `emscripten_sleep(0)`; browsers clamp
+  nested timers to ~4 ms, so each frame lost ~4.7 ms. The map wait is now a promise resolved by the
+  MapAsync callback and the yield is a MessageChannel message. A/B under +9 ms synthetic load (same
+  scene): 46 FPS old vs 59 FPS new. Switches: `?burn=<ms>` adds CPU load per frame, `?oldyield`
+  restores the old waits. `?log` now also prints a per-frame split (guest/seal/encode/schedule
+  wait/yield, map latency, VI sleep, `busy_per_frame` = the real CPU load, ~6.5 ms in a race on the
+  M5), `[web-prof] slow frame` (what ran during each frame over 150 ms) and `[web-nand]` for NAND
+  operations over 20 ms. Race-start save shadowing (`NANDOpen` copying the 2.8 MB `rksys.dat` through
+  OPFS) took ~330 ms twice; it now copies in 1 MiB chunks (under 20 ms). Remaining race-load cost is
+  ~200 ms guest frames (`RaceScene::CreateAndInitInstances`, heap alloc, Mii models). The 1.5 s
+  frames at startup are the game's own StrapScene wait. The Worker now lets browsers keep
+  `game/DATA/*` for a day (`max-age=86400`) instead of revalidating every read; this is only in
+  effect after `deploy-web.py --worker`. Hosted TTFB was 0.4-0.5 s per request from the US east
+  coast (bucket is WEUR), so serial disc reads dominate loads on a far-away connection.
 - Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
   Access setting was changed during this work. Do not describe the current hosted page as
   Access-protected; see Rules above.

@@ -64,9 +64,12 @@ export default {
       'Cross-Origin-Resource-Policy': 'same-origin',
       'Content-Type': TYPES[key.split('.').pop()] ?? 'application/octet-stream',
       // Content-addressed packs/previews never change at a given URL; browsers may retain
-      // their private copy. Manifests and ordinary game paths still revalidate normally.
+      // their private copy. Disc files (game/DATA) are the unmodified disc, so they may be reused for
+      // a day: every race start reads dozens of them, and revalidating each one costs a full round
+      // trip. Manifests, saves and the page itself still revalidate normally.
       'Cache-Control': /^game\/(?:web-videos\/[a-f0-9]{64}\.thp|file-packs\/[a-f0-9]{64}\.bin)$/.test(key)
-        ? 'private, max-age=31536000, immutable' : 'private, no-cache',
+        ? 'private, max-age=31536000, immutable'
+        : key.startsWith('game/DATA/') ? 'private, max-age=86400' : 'private, no-cache',
       'Accept-Ranges': 'bytes',
       ETag: object.httpEtag,
     });

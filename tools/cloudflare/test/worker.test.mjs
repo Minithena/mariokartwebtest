@@ -75,10 +75,16 @@ test('only content-addressed packs and previews receive long-lived private cachi
     const response = await worker.fetch(new Request('https://game.test/' + key), { BUCKET: bucket(key) });
     assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
   }
-  for (const key of ['game/manifest-v2.txt', 'WiiCompiled.js', 'game/DATA/files/test.szs', 'game/file-packs/mutable.bin']) {
+  for (const key of ['game/manifest-v2.txt', 'WiiCompiled.js', 'game/save/rksys.dat', 'game/file-packs/mutable.bin']) {
     const response = await worker.fetch(new Request('https://game.test/' + key), { BUCKET: bucket(key) });
     assert.equal(response.headers.get('Cache-Control'), 'private, no-cache');
   }
+});
+
+test('unmodified disc files are reused for a day, not revalidated on every read', async () => {
+  const key = 'game/DATA/files/test.szs';
+  const response = await worker.fetch(new Request('https://game.test/' + key), { BUCKET: bucket(key) });
+  assert.equal(response.headers.get('Cache-Control'), 'private, max-age=86400');
 });
 
 test('malformed percent encoding returns a client error', async () => {
