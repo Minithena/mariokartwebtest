@@ -14,9 +14,9 @@ const dwcEncode = (s) => bytes(s).toString('base64').replace(/\+/g, '.').replace
 const dwcDecode = (s) => Buffer.from(s.replace(/\./g, '+').replace(/-/g, '/').replace(/\*/g, '='), 'base64').toString('latin1');
 
 class Client {
-  constructor(code) {
+  constructor(code, token = '') {
     this.queue = [];
-    this.ws = new WebSocket(`${base.replace(/^http/, 'ws')}/v1/rooms/${code}/ws`);
+    this.ws = new WebSocket(`${base.replace(/^http/, 'ws')}/v1/rooms/${code}/ws${token ? '?token=' + token : ''}`);
     this.ws.binaryType = 'arraybuffer';
     this.ws.addEventListener('message', (e) => this.queue.push(Buffer.from(e.data)));
     this.ws.addEventListener('error', () => { this.error = true; });
@@ -38,6 +38,41 @@ class Client {
   }
   data(conn, text) { this.ws.send(wire(3, u32(conn), bytes(text))); }
   udp(ip, payload) { this.ws.send(wire(1, u16(25000), u32(ip), u16(25000), payload)); }
+  close() { this.ws.close(); }
+  async roster(predicate) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const data = JSON.parse((await this.take(0x85)).subarray(1).toString('utf8'));
+      if (predicate(data)) return data;
+    }
+    throw new Error('Timed out waiting for updated game roster');
+  }
+}
+
+class Lobby {
+  constructor(code) {
+    this.queue = [];
+    this.ws = new WebSocket(`${base.replace(/^http/, 'ws')}/v1/rooms/${code}/lobby`);
+    this.ws.addEventListener('message', e => this.queue.push(JSON.parse(e.data)));
+    this.ws.addEventListener('error', () => { this.error = true; });
+  }
+  async take(predicate) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const i = this.queue.findIndex(predicate);
+      if (i >= 0) return this.queue.splice(i, 1)[0];
+      assert.ok(!this.error, 'Lobby WebSocket failed');
+      await delay(5);
+    }
+    throw new Error('Timed out waiting for lobby update');
+  }
+  async ready() {
+    const welcome = await this.take(message => message.type === 'welcome');
+    this.ip = welcome.id; this.token = welcome.token;
+    assert.match(this.token, /^[a-f0-9]{32}$/);
+    return this;
+  }
+  name(name) { this.ws.send(JSON.stringify({ type: 'name', name })); }
   close() { this.ws.close(); }
 }
 
@@ -76,9 +111,22 @@ async function login(client) {
 const clients = [];
 try {
   const code = await newRoom();
-  const a = new Client(code), b = new Client(code), isolated = new Client(await newRoom());
+  const lobby = await new Lobby(code).ready();
+  clients.push(lobby);
+  const beforeStart = await lobby.take(m => m.type === 'roster');
+  assert.equal(beforeStart.players.length, 1);
+  assert.equal(beforeStart.players[0].inGame, false);
+  lobby.name('Alice');
+  const a = new Client(code, lobby.token), b = new Client(code), isolated = new Client(await newRoom());
   clients.push(a, b, isolated);
-  await Promise.all(clients.map((c) => c.ready()));
+  await Promise.all([a, b, isolated].map((c) => c.ready()));
+  assert.equal(a.ip, lobby.ip, 'lobby and game must use one player slot');
+  b.ws.send(wire(5, Buffer.from('Bob', 'utf8')));
+  const roster = await lobby.take(m => m.type === 'roster' && m.players.length === 2 &&
+    m.players.some(p => p.name === 'Alice' && p.inGame) && m.players.some(p => p.name === 'Bob' && p.inGame));
+  assert.ok(!JSON.stringify(roster).includes(lobby.token));
+  const isolatedRoster = await isolated.roster(m => m.players.length === 1);
+  assert.ok(isolatedRoster.players.every(p => p.name !== 'Alice' && p.name !== 'Bob'));
   assert.notEqual(a.ip, b.ip);
   const profiles = await Promise.all([login(a), login(b)]);
   assert.notEqual(profiles[0], profiles[1], 'cloned saves need different live profiles');
@@ -101,7 +149,11 @@ try {
   await delay(200);
   assert.equal(target.queue.filter((m) => m[0] === 0x81).length, 0);
   assert.equal(isolated.queue.filter((m) => m[0] === 0x81).length, 0);
-  console.log(`PASS ${base}: room creation, WSS/WS admission, NAS login, fragmented GameSpy proof, cloned-save profiles, 360 datagrams, room isolation`);
+  a.close();
+  await lobby.take(m => m.type === 'roster' && m.players.some(p => p.id === a.ip && !p.inGame));
+  lobby.close();
+  await b.roster(m => m.players.length === 1 && m.players[0].id === b.ip);
+  console.log(`PASS ${base}: lobby reservation, shared game slot, live names/rosters, leave cleanup, NAS login, fragmented GameSpy proof, cloned-save profiles, 360 datagrams, room isolation`);
 } finally {
   for (const client of clients) client.close();
 }

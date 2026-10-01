@@ -8,6 +8,7 @@
 //
 //   POST /v1/rooms              -> { code }   a new room
 //   GET  /v1/rooms/<code>/ws    WebSocket     join it
+//   GET  /v1/rooms/<code>/lobby WebSocket     reserve a place before the game starts
 //
 // A room exists as long as someone knows its code; the code is the only key, so it is long and
 // random.
@@ -35,7 +36,7 @@ export default {
       return Response.json({ code }, { headers: cors });
     }
 
-    const match = url.pathname.match(/^\/v1\/rooms\/([a-z0-9]{6,32})\/ws$/);
+    const match = url.pathname.match(/^\/v1\/rooms\/([a-z0-9]{6,32})\/(?:ws|lobby)$/);
     if (match) {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected a WebSocket', { status: 426 });
@@ -52,10 +53,12 @@ export class Room {
   constructor(state, env) {
     this.state = state;
     this.traceTraffic = env?.TRACE_TRAFFIC === '1';
-    this.players = new Map(); // ip -> { ws, ip }
+    this.players = new Map(); // ip -> participant; lobby and game sockets share one place
+    this.tokens = new Map(); // private reconnect token -> participant; never broadcast
     this.nextHost = 1;
     this.traffic = new Map(); // "a>b" -> packets since the last report (debugging aid)
     this.trafficTimer = null;
+    this.rosterTimer = null;
     this.wfc = new Wfc({
       sendUdp: (dstIp, srcPort, dstPort, data) => this.sendUdp(SERVER_IP, srcPort, dstIp, dstPort, data),
       sendTcp: (player, conn, data) => this.send(player, frame(0x83, u32(conn), data)),
@@ -65,49 +68,143 @@ export class Room {
   }
 
   async fetch(request) {
-    if (this.players.size >= MAX_PLAYERS) return new Response('This room is full (12 players).', { status: 409 });
+    const url = new URL(request.url);
+    const lobby = url.pathname.endsWith('/lobby');
+    const token = url.searchParams.get('token');
+    let player = token ? this.tokens.get(token) : null;
+    if (token && !player) return new Response('Invalid room session.', { status: 403 });
+    if (player && (lobby ? player.lobbyWs : player.ws)) return new Response('Already connected.', { status: 409 });
+    if (!player && this.players.size >= MAX_PLAYERS) return new Response('This room is full (12 players).', { status: 409 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
     server.binaryType = 'arraybuffer';
 
-    let host = this.nextHost;
-    while (this.players.has((0x0a4d0000 | host) >>> 0)) host = (host % 250) + 1;
-    this.nextHost = (host % 250) + 1;
-    const player = { ws: server, ip: (0x0a4d0000 | host) >>> 0 };
-    this.players.set(player.ip, player);
-    console.log(`player ${ipText(player.ip)} joined (${this.players.size} in the room)`);
-    this.send(player, frame(0x80, u32(player.ip)));
+    if (!player) {
+      let host = this.nextHost;
+      while (this.players.has((0x0a4d0000 | host) >>> 0)) host = (host % 250) + 1;
+      this.nextHost = (host % 250) + 1;
+      player = { ws: null, lobbyWs: null, ip: (0x0a4d0000 | host) >>> 0,
+        name: `Player ${host}`, token: crypto.randomUUID().replaceAll('-', '') };
+      this.players.set(player.ip, player);
+      this.tokens.set(player.token, player);
+      console.log(`player ${ipText(player.ip)} joined (${this.players.size} in the room)`);
+    }
+    if (lobby) {
+      player.lobbyWs = server;
+      server.send(JSON.stringify({ type: 'welcome', id: player.ip, token: player.token }));
+    } else {
+      player.ws = server;
+      this.send(player, frame(0x80, u32(player.ip)));
+    }
 
-    server.addEventListener('message', (event) => {
-      if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > MAX_FRAME_BYTES) {
-        server.close(1009, 'Invalid room frame');
-        return;
-      }
-      try {
-        this.receive(player, new Uint8Array(event.data));
-      } catch (error) {
-        console.warn('[room] invalid packet:', error.message);
-        server.close(1002, 'Invalid room packet');
-      }
-    });
-    const leave = () => {
-      if (this.players.get(player.ip) !== player) return;
-      this.players.delete(player.ip);
-      this.wfc.playerLeft(player);
-      if (!this.players.size) {
-        clearTimeout(this.trafficTimer);
-        this.trafficTimer = null;
-        this.traffic.clear();
-      }
-      console.log(`player ${ipText(player.ip)} left (${this.players.size} in the room)`);
-    };
+    server.addEventListener('message', (event) => this.handleMessage(player, server, lobby, event.data));
+    const leave = () => this.leave(player, server, lobby);
     server.addEventListener('close', leave);
     server.addEventListener('error', leave);
+    this.broadcastRoster();
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  handleMessage(player, server, lobby, data) {
+    const key = lobby ? 'lobbyWs' : 'ws';
+    // A session token can attach a replacement socket while the old connection is closing.
+    // Ignore any late messages from the superseded socket so it cannot mutate the new session.
+    if (player[key] !== server || this.players.get(player.ip) !== player) return;
+
+    if (lobby) {
+      if (typeof data !== 'string') {
+        server.close(1003, 'Expected a text lobby message');
+        return;
+      }
+      if (new TextEncoder().encode(data).byteLength > 512) {
+        server.close(1009, 'Lobby message too large');
+        return;
+      }
+      let message;
+      try {
+        message = JSON.parse(data);
+      } catch {
+        server.close(1002, 'Invalid lobby message');
+        return;
+      }
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        server.close(1002, 'Invalid lobby message');
+        return;
+      }
+      if (message.type === 'name') {
+        if (typeof message.name !== 'string') {
+          server.close(1002, 'Invalid lobby name');
+          return;
+        }
+        this.setName(player, message.name);
+      }
+      return;
+    }
+
+    if (!(data instanceof ArrayBuffer)) {
+      server.close(1003, 'Expected a binary room frame');
+      return;
+    }
+    if (data.byteLength > MAX_FRAME_BYTES) {
+      server.close(1009, 'Room frame too large');
+      return;
+    }
+    try {
+      this.receive(player, new Uint8Array(data));
+    } catch (error) {
+      console.warn('[room] invalid packet:', error.message);
+      server.close(1002, 'Invalid room packet');
+    }
+  }
+
+  leave(player, server, lobby) {
+    const key = lobby ? 'lobbyWs' : 'ws';
+    if (player[key] !== server) return;
+    player[key] = null;
+    if (!lobby) this.wfc.playerLeft(player);
+    if (!player.ws && !player.lobbyWs) this.removePlayer(player);
+    else this.broadcastRoster();
+  }
+
+  removePlayer(player) {
+    if (this.players.get(player.ip) !== player) return;
+    this.players.delete(player.ip);
+    this.tokens.delete(player.token);
+    this.wfc.playerLeft(player);
+    if (!this.players.size) {
+      clearTimeout(this.trafficTimer);
+      this.trafficTimer = null;
+      this.traffic.clear();
+    }
+    this.broadcastRoster();
+    console.log(`player ${ipText(player.ip)} left (${this.players.size} in the room)`);
+  }
+
+  broadcastRoster() {
+    clearTimeout(this.rosterTimer);
+    this.rosterTimer = null;
+    const players = [...this.players.values()].map(p => ({ id: p.ip, name: p.name || `Player ${p.ip & 255}`, inGame: !!p.ws }));
+    const json = JSON.stringify({ type: 'roster', players, capacity: MAX_PLAYERS });
+    const message = frame(0x85, new TextEncoder().encode(json));
+    for (const player of this.players.values()) {
+      this.send(player, message);
+      try { player.lobbyWs?.send(json); } catch {}
+    }
+  }
+
+  setName(player, text) {
+    const name = Array.from(text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
+      .replace(/\s+/g, ' ').trim()).slice(0, 24).join('') || `Player ${player.ip & 255}`;
+    if (name !== player.name && this.players.get(player.ip) === player) {
+      player.name = name;
+      // Coalesce rapid edits so one client cannot flood every sidebar with DOM updates.
+      if (!this.rosterTimer) this.rosterTimer = setTimeout(() => this.broadcastRoster(), 100);
+    }
+  }
+
   receive(player, msg) {
+    if (this.players.get(player.ip) !== player) return;
     const view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
     switch (msg[0]) {
       case 0x01: { // UDP: srcPort dstIp dstPort data
@@ -137,6 +234,12 @@ export class Room {
       case 0x04: // CLOSE: conn
         if (msg.length >= 5) this.wfc.tcpClose(player, view.getUint32(1));
         return;
+      case 0x05: { // NAME: bounded UTF-8 display name, unrelated to WFC account identity
+        if (msg.length > 129) throw new Error('Display name too long');
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(msg.subarray(1));
+        this.setName(player, text);
+        return;
+      }
     }
   }
 
@@ -167,6 +270,7 @@ export class Room {
   }
 
   send(player, bytes) {
+    if (!player.ws) return;
     try {
       player.ws.send(bytes);
     } catch {

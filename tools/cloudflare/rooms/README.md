@@ -2,11 +2,21 @@
 
 This Worker hosts a room relay and a small Nintendo WFC protocol implementation. It serves no
 game files. Each invite gets an isolated Durable Object; a player can only send game packets to
-players in that room. A room accepts at most 12 browser connections.
+players in that room. A room accepts at most 12 participants; each can hold a lobby and a game socket.
 
 The game speaks its original WFC matchmaking and peer protocols. Virtual sockets in the
 WiiCompiled web runtime carry those packets over WSS to this Worker. Race packets are relayed
 over WebSockets; this implementation does not use WebRTC or connect to Nintendo/Wiimmfi.
+
+The lobby endpoint `GET /v1/rooms/<code>/lobby` accepts a text WebSocket. It first sends
+`{"type":"welcome","id":<number>,"token":"<private session token>"}`. Send
+`{"type":"name","name":"<display name>"}` to set a bounded display name, then read
+`{"type":"roster","players":[{"id":<number>,"name":"...","inGame":<boolean>}],"capacity":12}`
+updates. The private token is only for the player's own session and is never included in a roster.
+Open the game socket at `/v1/rooms/<code>/ws?token=<token>` to use the same reserved player slot;
+game clients that do not use a lobby token can still join directly. A slot remains reserved while
+either its lobby or game socket is connected, and the room's limit of 12 counts both kinds of
+participants.
 
 ```sh
 npm install

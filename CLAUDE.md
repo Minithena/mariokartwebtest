@@ -15,9 +15,9 @@ All builds run on that Mac, because they need the disc.
   its loader `.js`). The translated code embeds the game's code and data, so it counts as game
   content too. `.gitignore` covers the usual paths; check `git status` before every commit.
 - The proof of concept normally stays **private**: localhost or Cloudflare Access.
-  **Current explicit owner exception (2026-10-01):** the owner is temporarily disabling Cloudflare
-  Access while testing. They confirmed this twice; leave that setting as they chose, and do not
-  recreate the Access app again without a new request. This does not authorise putting game data in git.
+  **Current test state (2026-10-01):** the owner intentionally disabled Cloudflare Access for
+  testing. No Access setting was changed during this work; leave the current state unchanged and
+  do not describe the hosted page as Access-protected. This does not authorise putting game data in git.
 - A later version asks each player for their own disc image in the browser (read locally, never
   uploaded). Skipping that step is only for the private proof of concept.
 - WiiCompiled is GPLv3, so the port's source changes are published (in the fork, below).
@@ -35,7 +35,8 @@ All builds run on that Mac, because they need the disc.
 - **M0 done.** Native build in `wiicompiled/build-macos`. Reference ghost: Mario Circuit 1:44.178;
   backup of the native save at `../saves/m0-baseline/rksys.dat` (outside the repo).
 - **M1 done** in Chrome 152 and Firefox 156: races run, the M0 ghost replays with an identical time.
-- Fork `Minithena/Wiicompiled`, branch `web`, and this repo (`Minithena/mariokartwebtest`) are pushed.
+- The runtime update is published in `Minithena/Wiicompiled`, branch `web`, at `7f747d7`.
+  This repository records the matching relay source, submodule revision and deployment results.
 - Build and run (tools in `../tools`: `emsdk`, `nodtool`; dotnet@8 via Homebrew, see memory):
   `source ../tools/emsdk/emsdk_env.sh && cmake --build wiicompiled/build-web --target WiiCompiled`,
   then `./tools/stage-web.sh` and `python3 tools/serve.py site/public`, open
@@ -59,48 +60,57 @@ All builds run on that Mac, because they need the disc.
   - Key/mouse taps shorter than a frame latch until the next `PADRead` (aurora `input.cpp`
     `take_taps`), so quick taps, including automated ones, reach the game and the F10 rebind prompt.
 - Current priorities (owner's latest direction: focus on multiplayer; defer M3 until asked):
-  1. Multiplayer: room implementation in `tools/cloudflare/rooms`, virtual sockets in
-     `runtime/src/platform/web/web_vnet.{cpp,h}`. Two local browser clients have completed login,
-     matchmaking, course voting and a shared race start (N64 DK's Jungle Parkway). Race completion
-     with both players actively driving and a test across two physical machines remain unverified.
-     The game retains its own inactivity disconnects: a parked client is not a valid endurance test.
-  2. Performance: pipelines prewarm behind the boot screen from `initial_pipeline_cache.db`
-     (about 19 s on a first visit, 8 s later) plus the pipelines this browser met before, which
-     aurora appends to `/persist/WiiCompiled/Cache/web_pipelines.bin` (`load_seed_pipelines`,
-     `load_web_pipeline_log` in `pipeline_cache.cpp`). Left: course select drops to about 36 FPS on
-     the Mushroom Cup preview. The owner subsequently reported severe repeated Firefox menu lag,
-     recovering after the mode-selection screen. Browser menu videos now use alternate frames
-     at half the frame rate (about 30 FPS), with identical retained image bytes and playback duration.
-     The owner confirmed smoother menus, but still reported stutter and slow transitions into races.
-     A hosted trace showed a run of small staff-ghost reads roughly a second apart; the deployed loading
-     update packs small disc assets and reads ahead in videos. The owner confirms race loading
-     is now fine and corrected the remaining symptom to stutter between menus. The diagnostic capture shows a settled character menu near 60 FPS, with large
-     transition spikes dominated by DVD reads; it does not establish smooth browser presentation.
+  1. Multiplayer: two fresh localhost origins on ports 8005 and 8006 both reached online character
+     select automatically, matched, and shared a Moo Moo Meadows 100cc race start. The lobby shows
+     named participants immediately; each participant has one paired lobby/game slot. Auto-join
+     follows the expected controller route through title, profile, WFC and VS menus to character
+     select, with a manual fallback. It does not accept generic prompts. No completed driven race or
+     cross-physical-laptop test is verified. A production R2/room invite reached character select
+     in Chromium's in-app browser after one Play click; the roster showed one participant in-game.
+     Five consecutive 3-second samples settled near 60 FPS with no frames above 25 ms. This does not
+     establish Firefox smoothness. The game retains its own inactivity disconnects, so a parked
+     client is not an endurance test.
+  2. Performance: the browser rebuilds 1,199 pipeline recipes into GPU pipeline objects per page
+     session. Browser/driver binary reuse is opaque, and no performance seed pruning has been done.
+     Earlier pipeline warmup and menu frame-rate measurements are historical; do not present them as
+     current browser smoothness. Firefox smoothness is not verified: a native Firefox screenshot and
+     accessibility tree showed mismatched pages, and that test tab was closed. The renderer now
+     resolves the current RAM texture again when a previously bound EFB copy has been evicted.
+     A hosted single-player Bowser's Castle first-race check rendered the starting HUD and minimap
+     correctly. This did not reproduce the owner's exact scene-over-HUD corruption later on the
+     course, so that screenshot's cause and resolution remain unconfirmed.
   3. M3 (players bring their own disc) is deferred at the owner's request.
 - Multiplayer details:
   - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
     services and peer UDP datagrams travel over a WebSocket; no public Nintendo/Wiimmfi service
-    or native TCP/UDP access is involved. This is a relay, not WebRTC.
-  - Use the page's **Create room / Join room / Copy invite** controls before starting. In the game,
-    everyone chooses **Nintendo WFC → Worldwide → VS Race**; matching stays inside the invite.
-    Local pages use the room Worker on `127.0.0.1:8787`; a full `?room=ws://...` or `wss://...`
-    remains available for diagnostics. The hosted page uses `mkw-rooms.athenaaa.workers.dev`.
+    or native TCP/UDP access is involved. This is a relay, not WebRTC. Each participant occupies
+    one paired lobby/game slot, and the lobby displays named participants immediately.
+  - Use **Create room / Join room / Copy invite** before starting. Auto-join follows the expected
+    controller route through title, profile, WFC and VS menus to character select, with a manual
+    fallback; it does not accept generic prompts. Add `?manual` to bypass auto-join, then choose
+    **Nintendo WFC → Worldwide → VS Race** yourself. Local pages use the room Worker at
+    `127.0.0.1:8787`; a full `?room=ws://...` or `?room=wss://...` remains available for
+    diagnostics. The hosted page uses `mkw-rooms.athenaaa.workers.dev`.
   - Online browser tabs bypass Aurora's focus/hidden pause path. Its 100 ms event wait and GX
     retries were slowing background clients enough to disconnect them. ImGui draws also scale
     to the actual render attachment, fixing a resize-time WebGPU scissor crash.
-  - Test: `cd tools/cloudflare/rooms && npm test` (9 unit tests), then with Wrangler running,
-    `node test/live-smoke.mjs http://127.0.0.1:8787` (NAS/GameSpy proofs, cloned-save profiles,
-    360 bidirectional datagrams, room isolation). The same smoke script accepts the hosted URL.
-  - Deployment verified on 2026-09-30: `mkw-rooms.athenaaa.workers.dev` is enabled with the
-    owner's explicit approval; the live protocol smoke passes. The updated game build is uploaded
-    to `mkw-web-eu`; both its page and WASM still redirect unauthenticated visitors to Access.
-    R2's public URL is disabled and it has no custom public domains. Web and native builds pass;
-    all 8 configured native CTest checks pass. The source is pushed to the existing branches.
+  - Tests: `cd tools/cloudflare/rooms && npm test` (17 checks); the web suites pass 56 JS checks:
+    fetch 27, room UI 4, relay 17 and asset Worker 8. Web and native builds pass, as do all 8
+    configured native CTest checks.
+  - Current deployment: relay version `5779cf00e4b44e90ab333e4be674e2f8` is deployed, and the
+    production live smoke passed lobby/roster/reservation cleanup, NAS, fragmented GameSpy,
+    cloned-save IDs, 360 datagrams and room isolation. The R2 upload completed (3 files, 122.2 MB);
+    hosted HTML and loader SHA-256 match local, and WASM Content-Length and ETag match the local
+    MD5. The hosted Chromium in-app-browser end-to-end test passed: one Play click reached online
+    character select, roster presence showed the participant in-game, and five 3-second samples
+    were near 60 FPS with no frame over 25 ms. This does not verify Firefox smoothness. Access is
+    intentionally disabled for testing per the owner; no Access setting was changed.
   - Room code is AGPL-3.0; its licence, source attribution and setup are in the room folder.
     No game-derived code or files may be included in that Worker or in git.
 - **M2 (hosting)**: Worker `mkw-web` (`tools/cloudflare/`) at
-  `https://mkw-web.athenaaa.workers.dev`, behind Cloudflare Access (owner's email, set in
-  the dashboard), serving the private R2 bucket `mkw-web-eu` (Western Europe). Upload with
+  `https://mkw-web.athenaaa.workers.dev`, serving the private R2 bucket `mkw-web-eu` (Western
+  Europe). Cloudflare Access is normally used for privacy, but the owner intentionally disabled it
+  for the current test window; no Access setting was changed during this work (see Rules). Upload with
   `python3 tools/deploy-web.py` after `stage-web.sh` (sends only changed files; `--worker` also
   deploys the Worker; needs `npx wrangler login`). An empty bucket `mkw-web` (ENAM) is left over
   and can be deleted.
@@ -113,8 +123,8 @@ All builds run on that Mac, because they need the disc.
   reached the Mario Kart title screen at 60 FPS, and start/middle/suffix range bytes match local
   disc files. Direct hosted-browser confirmation is separate from this proxy test.
   `node --test tools/cloudflare/test/worker.test.mjs` covers these cases and opt-in diagnostics
-  (8 tests pass). `?log` forwards the page console to the Access-protected `/log` endpoint, in
-  bounded batches, readable with `wrangler tail mkw-web --format json`. Access remains enabled.
+  (8 tests pass). `?log` forwards the page console to `/log` in bounded batches, readable with
+  `wrangler tail mkw-web --format json`. The current Access state is recorded under Rules.
 - Final startup correction: a hosted/cached HEAD response was yielding a zero-length manifest.
   The fetch backend now loads the manifest with one uncached GET and serves those same bytes to
   C++. Empty/invalid manifests fail with a visible Reload/error screen. The hosted URL has been
@@ -126,32 +136,36 @@ All builds run on that Mac, because they need the disc.
   All linked frames/durations were validated and FFmpeg decoded-pixel hashes matched retained
   source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
   sessions. Original `Assets/DATA` and racing physics are not modified.
-  Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and
-  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (18).
+  Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and the fetch
+  frontend suite now has 27 checks; the room UI suite has 4.
 - Loading optimisation: `p [logicalPath, file-packs/hash.bin, offset, size]` records in manifest-v2
   map 143 unchanged assets of at most 64 KiB each into one 2,777,464-byte immutable download.
   The browser checks its SHA-256, shares the download, and serves file-relative slices. The pack
   excludes saves; legacy clients retain the individual disc paths. Worker responses permit private
   browser caching only for content-addressed packs and previews.
-  Video reads buffer four 1 MiB chunks ahead, refilling when only two remain; concurrent requests
-  share in-flight downloads, and failed prefetches retry on demand. SZS archives up to 16 MiB
-  download at the first header read to avoid serial range round trips. Tests cover concurrent
-  reads, corruption/bounds, retries, read-ahead, archive limits and file lifetime. This addresses
-  observed I/O stalls; the remaining reported symptom is a hitch during menu transitions.
-  The WebAssembly build and 26 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
+  Video reads stream four 1 MiB chunks ahead and publish each completed chunk immediately, without
+  waiting for the full 4 MiB response tail. Concurrent requests share in-flight downloads; lifecycle
+  cancellation prevents completed work from repopulating a freed file, and failed prefetches retry
+  on demand. SZS archives up to 16 MiB download at the first header read to avoid serial range round
+  trips. Tests cover concurrent reads, corruption/bounds, retries, streamed read-ahead, archive
+  limits and file lifetime. The WebAssembly build passes. Across the web suites, 56 JS checks pass:
+  fetch 27, room UI 4, relay 17 and asset Worker 8. All 143 packed payloads match their source bytes, and
   the actual remote R2 pack plus deployed loader were verified through a localhost-only Worker
   proxy, including a staff-ghost read using just the manifest and pack requests.
 - Diagnostic `?log` launches enable `MKW_WEB_PERF`. `web_performance.cpp` reports frame counts,
   frames above 25/50/100 ms, average/maximum guest and graphics timings, and DVD read timing every
   three seconds. This is opt-in instrumentation to distinguish the remaining selection-menu
   hitch from one-time network loads; it is not itself a performance fix.
-- Menu warming fetches common menu/model archives, the first 16 MiB of the sound archive in
-  bounded ranges, and the first 2 MiB of each aliased menu preview. It starts during boot, uses
-  two background jobs and at most 64 MiB total (61.79 MiB for this disc). Demand reads share
-  the same resource cache and in-flight jobs; optional warmup failures retry on demand.
-- Hosting tests: Access was restored after an unauthenticated check served the game page,
-  but the owner then confirmed they were deliberately removing it temporarily during testing.
-  Leave that setting as the owner chose; the explicit exception is recorded under Rules above.
+- Menu warming fetches common menu/model archives, including `Font.szs`, `BackModel.szs` and
+  `o_Start2_32_fan.brstm`, the first 16 MiB of the sound archive in bounded ranges, and the first
+  2 MiB of each aliased menu preview. It starts during boot, uses two background jobs and totals
+  about 62.96 MiB under the 64 MiB cap. Demand reads share the same resource cache and in-flight
+  jobs; optional warmup failures retry on demand.
+- Hosting test state: Cloudflare Access is intentionally disabled by the owner for testing, and no
+  Access setting was changed during this work. Do not describe the current hosted page as
+  Access-protected; see Rules above.
+- The overnight QA tabs, extra servers on ports 8004–8006 and diagnostic tail were closed.
+  The original local game server on port 8000 and room server on port 8787 remain available.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 

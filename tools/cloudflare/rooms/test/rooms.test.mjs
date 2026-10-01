@@ -13,6 +13,9 @@ function add(room, ip) {
   room.players.set(ip, p);
   return p;
 }
+function socket() {
+  return { sent: [], closed: [], send(message) { this.sent.push(message); }, close(code, reason) { this.closed.push({ code, reason }); } };
+}
 function udp(port, ip, destPort, data) {
   const msg = new Uint8Array(9 + data.length);
   const v = new DataView(msg.buffer);
@@ -66,6 +69,146 @@ test('full rooms reject joins before allocating an address', async () => {
   for (let n = 1; n <= 12; n++) add(room, 0x0a4d0000 | n);
   const response = await room.fetch(new Request('https://rooms.test/v1/rooms/abcdef/ws'));
   assert.equal(response.status, 409);
+});
+
+test('rosters contain only this room and distinguish lobby reservations from game connections', () => {
+  const room = new Room({}, {}), other = new Room({}, {});
+  const a = add(room, 0x0a4d0001), b = add(room, 0x0a4d0002), stranger = add(other, 0x0a4d0001);
+  a.name = 'Alice'; b.name = 'Bob';
+  const lobbyMessages = [];
+  b.ws = null; b.lobbyWs = { send: message => lobbyMessages.push(JSON.parse(message)) };
+  b.token = 'must-not-be-broadcast';
+  room.broadcastRoster();
+  const roster = JSON.parse(decode(a.received[0].subarray(1)));
+  assert.equal(a.received[0][0], 0x85);
+  assert.deepEqual(roster.players, [
+    { id: a.ip, name: 'Alice', inGame: true }, { id: b.ip, name: 'Bob', inGame: false },
+  ]);
+  assert.equal(roster.capacity, 12);
+  assert.deepEqual(lobbyMessages, [roster]);
+  assert.equal(JSON.stringify(roster).includes(b.token), false);
+  assert.equal(stranger.received.length, 0);
+});
+
+test('display names are bounded, sanitised and coalesced before broadcasting', () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001);
+  room.receive(a, Uint8Array.of(5, ...encode('  Alice\u202e\n  Racer  ')));
+  assert.equal(a.name, 'Alice Racer');
+  assert.equal(a.received.length, 0);
+  room.setName(a, 'x'.repeat(80));
+  assert.equal(a.name.length, 24);
+  room.setName(a, '');
+  assert.equal(a.name, 'Player 1');
+  room.broadcastRoster();
+  assert.equal(a.received.length, 1);
+  assert.throws(() => room.receive(a, new Uint8Array(130).fill(5)), /too long/);
+  assert.throws(() => room.receive(a, Uint8Array.of(5, 255)));
+});
+
+test('leaving removes the participant token and updates remaining players only once', () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001), b = add(room, 0x0a4d0002);
+  a.token = 'reserved-token'; room.tokens.set(a.token, a);
+  room.removePlayer(a);
+  room.removePlayer(a);
+  assert.equal(room.tokens.size, 0);
+  assert.equal(b.received.length, 1);
+  assert.equal(JSON.parse(decode(b.received[0].subarray(1))).players.length, 1);
+  room.receive(a, udp(123, b.ip, 456, encode('stale connection')));
+  assert.equal(b.received.length, 1);
+});
+
+test('invalid or duplicate participant tokens cannot claim an existing slot', async () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001);
+  a.token = 'existing-token'; room.tokens.set(a.token, a);
+  const invalid = await room.fetch(new Request('https://rooms.test/v1/rooms/abcdef/ws?token=invalid'));
+  const duplicate = await room.fetch(new Request('https://rooms.test/v1/rooms/abcdef/ws?token=existing-token'));
+  assert.equal(invalid.status, 403);
+  assert.equal(duplicate.status, 409);
+  assert.equal(room.players.size, 1);
+});
+
+test('lobby reservations consume capacity and survive either single-channel disconnect', async () => {
+  const room = new Room({}, {});
+  const reserved = add(room, 0x0a4d0001);
+  reserved.ws = null;
+  reserved.lobbyWs = socket();
+  reserved.token = 'reservation-token';
+  room.tokens.set(reserved.token, reserved);
+  for (let n = 2; n <= 12; n++) {
+    const p = add(room, 0x0a4d0000 | n);
+    p.token = `token-${n}`;
+    room.tokens.set(p.token, p);
+  }
+
+  const full = await room.fetch(new Request('https://rooms.test/v1/rooms/abcdef/lobby'));
+  assert.equal(full.status, 409);
+  assert.equal(room.players.size, 12);
+
+  const lobby = reserved.lobbyWs;
+  const game = socket();
+  reserved.ws = game;
+  room.leave(reserved, lobby, true);
+  assert.equal(room.players.get(reserved.ip), reserved);
+  assert.equal(room.tokens.get(reserved.token), reserved);
+  assert.equal(reserved.lobbyWs, null);
+
+  room.leave(reserved, game, false);
+  assert.equal(room.players.has(reserved.ip), false);
+  assert.equal(room.tokens.has('reservation-token'), false);
+  assert.equal(room.players.size, 11);
+});
+
+test('superseded sockets cannot change names, relay packets or disconnect replacements', () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001), b = add(room, 0x0a4d0002);
+  const oldLobby = socket(), currentLobby = socket();
+  a.lobbyWs = oldLobby;
+  a.token = 'reconnect-token'; room.tokens.set(a.token, a);
+  room.leave(a, oldLobby, true);
+  a.lobbyWs = currentLobby; // token reconnects the lobby channel while the game channel remains live
+
+  room.handleMessage(a, oldLobby, true, JSON.stringify({ type: 'name', name: 'Impostor' }));
+  room.leave(a, oldLobby, true);
+  assert.equal(a.name, undefined);
+  assert.equal(a.lobbyWs, currentLobby);
+
+  const oldGame = a.ws, currentGame = socket();
+  a.ws = currentGame;
+  const before = b.received.length;
+  room.handleMessage(a, oldGame, false, udp(1000, b.ip, 2000, encode('stale')).buffer);
+  room.leave(a, oldGame, false);
+  assert.equal(b.received.length, before);
+  assert.equal(a.ws, currentGame);
+  assert.equal(room.players.get(a.ip), a);
+
+  room.handleMessage(a, currentLobby, true, JSON.stringify({ type: 'name', name: 'Alice' }));
+  assert.equal(a.name, 'Alice');
+});
+
+test('lobby messages reject malformed shapes, binary frames and oversized UTF-8 payloads', () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001);
+  const cases = [
+    ['{broken', 1002],
+    ['null', 1002],
+    [JSON.stringify({ type: 'name', name: 3 }), 1002],
+    ['💚'.repeat(129), 1009],
+    [new ArrayBuffer(0), 1003],
+  ];
+  for (const [data, code] of cases) {
+    const ws = socket();
+    a.lobbyWs = ws;
+    room.handleMessage(a, ws, true, data);
+    assert.equal(ws.closed[0]?.code, code);
+  }
+  assert.equal(a.name, undefined);
+});
+
+test('malformed game display names close only the current game socket', () => {
+  const room = new Room({}, {}), a = add(room, 0x0a4d0001);
+  const ws = socket();
+  a.ws = ws;
+  room.handleMessage(a, ws, false, Uint8Array.of(5, 255).buffer);
+  assert.equal(ws.closed[0]?.code, 1002);
+  assert.equal(room.players.get(a.ip), a);
 });
 
 test('truncated envelopes are ignored and TCP cannot reach external hosts', () => {
