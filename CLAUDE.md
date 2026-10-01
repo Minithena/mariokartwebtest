@@ -62,7 +62,7 @@ python3 tools/deploy-web.py [--worker]                       # uploads only chan
 Page options: `?muted`, `?log` (diagnostics, below), `?resetsave`, `?manual` (skip direct entry),
 `?room=ws(s)://...`, `?burn=<ms>` (synthetic CPU load per drawn frame), `?oldyield` (old timer-based waits),
 `?nocatchup` (turn off real-time race simulation), `?lagwait` (restore the game's own lag-frame waiting),
-`?pacetrace` (per-iteration pacing trace). See HANDOVER.md, "Real-time simulation".
+`?pacetrace` (per-iteration pacing trace). See HANDOVER.md, "Real-time simulation" and "Smoother draw rhythm".
 Tests: `node --test tools/cloudflare/test/worker.test.mjs wiicompiled/runtime/src/platform/web/tests/*.test.mjs`
 (56), `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), the room relay suite in
 `tools/cloudflare/rooms`, and `ctest` in `wiicompiled/build-macos` (9).

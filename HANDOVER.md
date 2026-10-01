@@ -210,6 +210,28 @@ Measured a 50cc Mushroom Cup Grand Prix (Mario, Standard Kart M, 11 opponents) i
   smaller module.
 - JSPI: Safari 27 added it (MDN data, merged 2026-09-16) and Safari 26+ has WebGPU, so Safari 27+ may now work; untested.
 
+### Smoother draw rhythm, race-load prefetch, trick label (2026-10-02; fork `web`)
+
+- **Players reported "fps better but shaky".** Skipping a draw on demand makes the next frame show two simulation
+  steps and every ~5th frame take longer. Now the game measures what an iteration costs with and without a draw
+  (EMAs, `work_ms(draw/skip)` in `[web-pace]`) and, when more than a fifth of the draws would have to go, draws on a
+  fixed rhythm instead: every 2nd, 3rd... step (`draw_every=N`). Mild lag still skips on demand. Measured with
+  `?burn=20` (a drawn iteration ~32 ms): `draw_every=3`, 59.9-60.0 steps/s, a perfectly regular drawn/skipped/skipped
+  cycle (20 fps, steady). Healthy: `draw_every=1`, 60/60. The 20% threshold is a judgement call; ask players for a
+  `?log` export (F12 console, filter `web-p`, right-click, Save as / Export) before tuning further.
+- **Race-load prefetch** (`web_race_warm.cpp` + `listenForPrefetch` in `mkw_fetchfs.js`): the first read of a course
+  file reads the roster from guest memory (race scenario pointer at 0x809BD728, player count at +36, 240-byte
+  records, vehicle +48, character +52; name tables at 0x808B3B50 vehicles, 0x808B3A90 drivers, kind table 0x808B3BE0
+  = "_red", "_blue", "" (the game uses index 2 except in team modes 3/9/10 where it uses record+244), suffix table
+  0x808B3BEC) and posts the 12 `Race/Kart/<vehicle>-<driver>.szs` paths over a `BroadcastChannel` to the fetcher,
+  which starts all the downloads at once. At 150 ms simulated latency: 12 serial ~160 ms stalls (~1.9 s) became 0.
+  Left: the course file itself (0.3-0.5 s) and the first music-stream read (~0.17 s); the course is known when the cup
+  is picked, so it could be fetched then. Split-screen suffix and team-mode names are not prefetched (they load as
+  before). Worker consoles are not forwarded by `?log`; the `[web-warm]` line is, and the proof is in the server log.
+- **Tricks:** the web build presents a GameCube controller (no motion option). A trick is the D-pad (arrow keys), not
+  R; the controls panel said right-click did "Drift, hop, trick" and now lists "↑ Trick (in the air, as you leave a
+  ramp)". Read from `GCNController::UpdateImpl`; not verified in play.
+
 ## Known issues and what to do next
 
 In rough priority order:
