@@ -127,7 +127,8 @@ Still there, found the same way: a race load reads about 12 opponent kart archiv
 latency, plus the course and the music stream: about 6.6 s on the loading screen there (maybe 2-3 s on the real
 host). The guest runs its own `DVDOpen`, so the C++ DVD layer only sees reads; the way in is to hook
 `ArchiveMgr::RequestLoadKartArchives` (0x80542210, queues every player's archive) and prefetch all the paths at
-once. No hook mechanism for translated functions exists yet. No read blocked during ~40 s of driving after the
+once. (Correction: a hook mechanism exists, see "Real-time simulation" below; and 0x80542210 turned out to be the
+menu `*-allkart.szs` loader, not the opponent files.) No read blocked during ~40 s of driving after the
 start, but that run did not prove an item was picked up.
 
 ### Third pass: asynchronous pipeline prewarm (fork f2e90d4, deployed, hashes checked)
@@ -143,6 +144,71 @@ Ask for a first-visit time from a friend's real Chrome, or try a fresh Chrome pr
 
 Also learned: the quickest way to a stall list is `serve.py --latency-ms` plus `tee` of its output to a file;
 the pane's log reader filters on whole chunks, so a file with `grep` is easier. Hosted boot and menus: loader only.
+
+### Race-load investigation, 2026-10-01 (nothing changed in code; findings only)
+
+Measured a 50cc Mushroom Cup Grand Prix (Mario, Standard Kart M, 11 opponents) in the app pane against
+`serve.py --latency-ms 150`, console via `?muted&log`:
+
+- **Disc reads dominate the load.** After `Scene Exit`, about 15 consecutive frames take ~165 ms with 94-97%
+  of guest samples in `0x8015e834` (`DVDReadPrio`). That is the course (`beginner_course.szs`, 2 MB) plus
+  12 opponent archives `Race/Kart/<vehicle>_kart-<driver>.szs` (100-150 KB each), read strictly one after
+  another, each costing one round trip (~158 ms here). The game's own CPU work in the load is small: one
+  ~190 ms frame (`RaceScene::CreateAndInitInstances`), then ~50-110 ms ones. Cost scales with latency:
+  ~13 round trips, so about 2 s at 150 ms, 6+ s at 450 ms.
+- **The "no hook mechanism" note was wrong.** `MKW_STATIC_TRANSLATED_CALL` (emitted by
+  `TranslatedBuildShardEmitter.cs`) runs `TryHandleRuntimeCall` and `ApplyRuntimeCallOptions` before every
+  static call, and `abi_bridge.h` already uses it for web code (`WebRoomLaunch::BeforeGuestCall`). A web-only
+  check on a target address is a few lines there.
+- **The obvious target is the wrong function.** `ArchiveMgr::RequestLoadKartArchives` (0x80542210) is called
+  once per player slot (r4 = slot, r5 and r6 stored at slot+1468/+1472), then queues
+  `LoadKartArchiveAsync` (0x80541E44) on the task thread. Its name table (0x808B0000+14992, ids below 48) is
+  for the `*-allkart.szs` menu archives, which the menu warm-up already fetches. The per-opponent files are
+  built from the format `Race/Kart/%s%s-%s%s` (vehicle name + `_kart`/`_bike`, driver name, split-screen
+  suffix `""`/`_2`/`_4`) in StaticR.rel, used near `ArchiveMgr::LoadKartArchive(playerId)` (0x80540E3C),
+  `GetKartArchivePrefix` (0x805419EC) and `GetKartArchivePostfix` (0x805419C8). Hook one of those (they know
+  the final per-player name) or the roster setup before them.
+- **Fix, in order of value:** (1) at the hook, ask `mkw_fetchfs.js` to fetch all the players' archives at
+  once (12 round trips become ~1); (2) hook earlier, when the roster is fixed (at "Start?"), so they are
+  already there when the load begins; (3) the course read could be prefetched with the cup choice. A larger
+  structural fix would let a pending disc read yield to the other guest threads instead of suspending the
+  whole game (reads are issued from the JSPI context that waits; the scheduler never runs meanwhile), but
+  it changes thread interleaving and is risky for online play.
+- Test recipe: `python3 tools/serve.py site/public --port 8011 --latency-ms 150 | tee <file>`, load
+  `WiiCompiled.html?muted&log`, click Start, then (confirm = left click on the canvas) title, Single
+  Player, Grand Prix, 50cc, Mario, Standard Kart M, Automatic, Mushroom Cup, OK. Note the line count of
+  the file before OK; `grep Race/Kart` after it lists the reads in order.
+
+### Real-time simulation and no lobby slow-down (2026-10-01; fork `web`, deployed with this section)
+
+- **Why a slow player slowed the room** (known issue 10, partly): the game counts, per player, the frames that
+  player lagged, sends the count in the race header, and every client that sees a higher count than its own idles
+  one frame and raises its own (`RKNet::PacketMgr::ProcessLagFrames` 0x80654B00, flag at scene+9529, consumed in
+  `GameScene::calc` 0x8051B3C8). So the whole room ran at the slowest player's speed. `web_guest_hooks.cpp` skips
+  that function (default; `?lagwait` restores it). **Read from the game's code, not tested with two real clients.**
+- **Real-time simulation** (default; `?nocatchup` turns it off): the game steps its simulation once per loop
+  iteration (`RKSystem::Run`: wait, draw, copy/present, calc), so a late frame meant slow motion. When the wall
+  clock is a step or more ahead of the race steps, the scene draw (`RKSceneManager::draw` 0x80009988) and the
+  `GXCopyDisp` present are skipped (at most 5 in a row, races only, detected by `RaceScene::OnCalc` 0x80554E6C) and
+  the VI timeline is moved back one period (`WebPacing::BorrowRetrace`, vi.cpp) so the next waits return at once; if
+  the game slept at least 3 ms in an iteration it is ahead and owes nothing. Measured in the app pane on an M5 with
+  `?burn=12` (extra cost per drawn frame): 46-48 steps/s without, 60.0 with, drawing ~45 fps; healthy: 60 steps,
+  60 drawn, 0 skipped. Not measured: a genuinely slow machine, or one whose CPU cannot do the game logic at 60/s
+  (draw_guest_ms ~3 ms and render ~3 ms of ~8.7 ms busy per frame here, so the upper bound is about 2x headroom).
+- Hook mechanism: `TryHandleRuntimeCall` in `abi_bridge.h` matches a **compile-time** list of guest addresses (so
+  the ~100k generated static calls fold it away; a runtime-slot version grew the wasm by 7.8 MB) and calls
+  `WebGuestHooks::Handle`. Editing `web_guest_hooks.h` rebuilds every translated function (~3 min); put anything
+  new in `web_pacing.h` instead. `?pacetrace` prints the first 240 race iterations (dt, idle sleep, fractional lag).
+- `?log` adds a `[web-pace]` line: race steps/s, drawn/s, skipped/s, step_ms (one simulation step), drawn_ms,
+  draw_guest_ms.
+- **Browser pre-flight** (shell.html): asks for a WebGPU adapter before Start and says why when there is none (no
+  API: advice per browser family; API but no adapter: hardware acceleration/driver/VM), plus a "Technical details"
+  box with a Copy button. Out-of-memory aborts get their own advice. Firefox users hit
+  `InternalError: out of memory` / "failed to allocate executable memory for module" (32 GB RAM, Linux Mint, so not
+  RAM: Firefox's cap on compiled code for a 122 MB module; reloading does not free it). MAXIMUM_MEMORY lowered from
+  4 GiB to 2 GiB. Candidates, unproven: fewer pre-started workers (`PTHREAD_POOL_SIZE=24`, about 8 are used), a
+  smaller module.
+- JSPI: Safari 27 added it (MDN data, merged 2026-09-16) and Safari 26+ has WebGPU, so Safari 27+ may now work; untested.
 
 ## Known issues and what to do next
 

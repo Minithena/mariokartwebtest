@@ -60,9 +60,11 @@ python3 tools/deploy-web.py [--worker]                       # uploads only chan
 ```
 
 Page options: `?muted`, `?log` (diagnostics, below), `?resetsave`, `?manual` (skip direct entry),
-`?room=ws(s)://...`, `?burn=<ms>` (synthetic CPU load), `?oldyield` (old timer-based waits).
+`?room=ws(s)://...`, `?burn=<ms>` (synthetic CPU load per drawn frame), `?oldyield` (old timer-based waits),
+`?nocatchup` (turn off real-time race simulation), `?lagwait` (restore the game's own lag-frame waiting),
+`?pacetrace` (per-iteration pacing trace). See HANDOVER.md, "Real-time simulation".
 Tests: `node --test tools/cloudflare/test/worker.test.mjs wiicompiled/runtime/src/platform/web/tests/*.test.mjs`
-(45), `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), the room relay suite in
+(56), `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), the room relay suite in
 `tools/cloudflare/rooms`, and `ctest` in `wiicompiled/build-macos` (9).
 
 ### How the web build works
@@ -195,8 +197,10 @@ game dies at the first draw), `-sASSERTIONS=0` and fixed memory without growth (
 - A fully driven multiplayer race and a two-machine test.
 - Hitches at the start of a new lap, and when new items appear or are used (reported by the owner,
   not yet diagnosed; see HANDOVER.md, known issues 8 and 9, for the likely causes and how to look).
-- Slower machines run the game in slow motion (a late frame is presented at once, with no catch-up), so
-  their friends see them rubberband; see HANDOVER.md, known issue 10, for the analysis and options.
+- Slower machines used to run the game in slow motion and slow the whole room (the game idles every client for the
+  frames the laggiest player lost). Both are addressed in the web build (real-time race simulation by skipping
+  draws; lag-frame waiting off), measured only with synthetic load on one machine; the lobby part is untested with
+  two real clients. See HANDOVER.md, "Real-time simulation".
 - The owner's scene-over-HUD corruption screenshot (later on a course) has not been reproduced.
 - Performance changes from 2026-10-01 were measured only in the app's browser pane; real Chrome via
   the extension was not connected.
