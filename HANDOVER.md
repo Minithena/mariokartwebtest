@@ -300,3 +300,37 @@ Tracked files are only source, tooling and notes. Build output (`wiicompiled/bui
 `site/public/*`, `*.wasm`), the disc, and local state (`.wrangler/`, `site/deployed.json`) are
 git-ignored; check `git status` before every commit. Stale build directories from the first day were
 removed. Do all web work on the fork's `web` branch.
+
+## Benchmark harness, 2026-10-01 (local, not deployed)
+
+`BENCHMARKING.md` and `tools/race_benchmark.py` describe frozen build snapshots, per-step/per-present
+captures, paired repeat comparisons and explicit finish/visual/sync observations. `perf-results/`
+is ignored and contains compiled snapshots plus raw observations; never commit or upload it.
+The runtime collector uses `?benchmark` without `?log`, so the sampling profiler stays off.
+Native race stage, course, engine class, game mode and player count identify the measured workload.
+Result export waits until all clients finish, avoiding export-induced peer frame spikes.
+
+Use the existing Mario Circuit 1:44.178 **spectated ghost** as the deterministic driving baseline;
+keep multiplayer verification in a separate cohort. `ghost-v1` only offers held menu buttons and
+does not supply racing input. Normal game URLs have no scripted controller. `autodrive-v1` is an
+online movement stress recipe that hits walls; it is not full-race or item/lap coverage.
+
+Live smoke evidence: two online Chrome clients with +12 ms CPU work per drawn frame on the peer
+recorded 600 active-racing steps each; peer ~29.3 presentations/s, host ~58.8, with bidirectional
+peer UDP. This is `perf-results/pilot-slow-peer-v2-20261001.json`, a pilot from an older collector
+schema, not an optimisation cohort or a complete multiplayer race. The earlier title-demo capture
+was correctly rejected as not a ghost replay and saved as `ghost/setup-rejected-title-demo.json`.
+
+Latest frozen build: `perf-results/builds/instrumented-baseline-v3b-20261001`. The ghost run setup is
+served on localhost port 8013, with a temporary Chrome incognito tab at session
+`157be5f9-3b14-4846-b1f5-197cdb6df421`. It reached the licence/main-menu setup, then the Mac locked.
+**No accepted reference-ghost capture or repeated baseline cohort exists yet.** Unlock, select
+Time Trials → Mario Circuit → the personal 1:44.178 ghost → Watch Replay, collect repeated runs and
+observe actual finishes before annotating validation. Do not count the attract demo or unit fixtures.
+
+Validation at this point: web/native builds compiled, 97 JS tests, 14 Python tests, 9 native tests
+passed, and the local room relay's 17 tests plus its live 360-datagram smoke passed. Other changes
+to browser startup/GPU compatibility and fetch prewarming are being made concurrently; preserve
+them and identify the measured binaries by their saved SHA-256 values. No FPS optimisation has
+been enabled as part of this benchmarking work. The source checkpoint is committed on
+`codex/race-performance-benchmarks` in both repositories; nothing was pushed or deployed.

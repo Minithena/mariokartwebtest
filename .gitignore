@@ -53,3 +53,6 @@ site/deployed.json
 # Generated browser-only menu videos and the symlink staging tree
 /site/web-videos/
 /site/web-data/
+
+# Local performance traces, build fingerprints and player/device observations
+/perf-results/

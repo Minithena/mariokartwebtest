@@ -53,6 +53,12 @@ Two local clients have been verified through a shared race start. Full-race comp
 players driving and testing on separate physical machines are still pending. See the
 [room service instructions](tools/cloudflare/rooms/README.md) for the protocol tests and deployment.
 
+## Race benchmarks
+
+Repeatable multiplayer performance captures, frozen baseline builds and the comparison gate are
+described in [BENCHMARKING.md](BENCHMARKING.md). Benchmark URLs can run a scripted controller and
+collect both clients' frame times without the diagnostic sampling profiler.
+
 ## Private hosting
 
 `tools/cloudflare/` is a Cloudflare Worker that serves the staged build from a private R2 bucket,
