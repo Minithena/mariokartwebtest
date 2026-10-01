@@ -27,6 +27,13 @@ Cloudflare Access is **off** at the owner's request for the current test window.
 off yourself and do not describe the hosted page as private. Never create a Worker under a new name
 with wrangler (it would have no Access); renames go through the dashboard.
 
+## Currently deployed
+
+Pushed and deployed on 2026-10-01: fork `web` at `52a5043`, this repo's branch at the commit that
+adds this file. Hosted `WiiCompiled.wasm` is 122,015,230 bytes; the loader and page HTML match the
+local staged files (SHA-256 checked); `mkw-web` Worker version `41c94fe7-a074-45ce-a2d1-04795f0ca1b9`.
+The room relay was not changed or redeployed. Not yet opened in a browser on the hosted URL.
+
 ## Day-to-day commands
 
 ```sh
@@ -59,7 +66,7 @@ Fixes, all measured before and after:
 5. **Pipeline prewarm** is time-budgeted per frame; **no-JSPI browsers** get a clear message
    instead of a cryptic assertion.
 6. **Hosting**: the Worker lets browsers keep `game/DATA/*` for a day (disc files never change).
-   Deployed together with the Worker.
+   Deployed with the Worker.
 
 Diagnostics added (all `?log`): per-frame time split, true busy time, slow-frame attribution, guest
 sampling profiler, slow NAND operations. `?burn=<ms>` and `?oldyield` exist for A/B tests. See
