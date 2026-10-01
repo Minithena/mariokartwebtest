@@ -72,10 +72,10 @@ Diagnostics added (all `?log`): per-frame time split, true busy time, slow-frame
 sampling profiler, slow NAND operations. `?burn=<ms>` and `?oldyield` exist for A/B tests. See
 CLAUDE.md, "Diagnostics".
 
-## Later on 2026-10-01 (not yet deployed or pushed)
+## Later on 2026-10-01 (pushed and deployed; fork web 3e63179, wasm 122,019,767 bytes)
 
-- **Lobby names in the game** work (see CLAUDE.md, "Lobby names in the game"). Needs a two-client look
-  on the hosted site after deploying.
+- **Lobby names in the game** work (see CLAUDE.md, "Lobby names in the game"). Smoke-tested on the hosted
+  site with one client (room, character select, matching); a two-client name check there is still to do.
 - **Race-start stalls on the hosted site**: the warm-up now covers the sound-archive blocks and race
   archives a race fetches at load and at GO (CLAUDE.md, "Race-start warm-up"). Measured only by request
   logs locally; the hosted effect is unmeasured. Mid-race, the next course (about 2.7 MiB) is still
