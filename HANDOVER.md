@@ -108,7 +108,19 @@ In rough priority order:
 5. Firefox smoothness is unverified. Firefox ESR cannot run the game (no JSPI).
 6. One audio "output queue full" drop was seen in a race; unexplained.
 7. The owner's scene-over-HUD corruption screenshot has not been reproduced.
-8. M3 (players bring their own disc) is deferred at the owner's request.
+8. **Hitches or stutters at the start of a new lap** in a race (reported by the owner, not yet
+   diagnosed). Likely candidates, unverified: the final-lap music (the faster `_F` stream, which a
+   hosted race fetches on demand) and lap jingles and HUD data read for the first time, each a blocking
+   disc read of ~0.4-0.5 s on the hosted site; compare with a local run to separate fetch cost from
+   frame cost. Reproduce with `?log` over several laps and look at `[web-perf] slow frame` and
+   `[web-prof] slow frame` lines lining up with the lap change.
+9. **Hitches or stutters when new items appear or are used** (reported by the owner, not yet
+   diagnosed). Likely candidates, unverified: effect pipelines for an item that are not in the
+   bundled seed (they are built the first time they are drawn: single present stalls of 40-490 ms were
+   seen at race start, and a browser remembers them only for its next visit), and item models, effect
+   archives or sounds read from the disc for the first time. Use `?log`, collect a race that uses many
+   different items, and check whether the slow frames are `present` (pipeline) or `DVDReadPrio` (disc).
+10. M3 (players bring their own disc) is deferred at the owner's request.
 
 ## Gotchas learned the hard way
 

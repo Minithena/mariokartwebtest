@@ -193,6 +193,8 @@ game dies at the first draw), `-sASSERTIONS=0` and fixed memory without growth (
   59.94 Hz displays may judder (fix would tie presentation to the browser's frame callback).
 - One audio "output queue full" drop was seen in a race (a crackle, not lag).
 - A fully driven multiplayer race and a two-machine test.
+- Hitches at the start of a new lap, and when new items appear or are used (reported by the owner,
+  not yet diagnosed; see HANDOVER.md, known issues 8 and 9, for the likely causes and how to look).
 - The owner's scene-over-HUD corruption screenshot (later on a course) has not been reproduced.
 - Performance changes from 2026-10-01 were measured only in the app's browser pane; real Chrome via
   the extension was not connected.
