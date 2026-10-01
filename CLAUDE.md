@@ -14,8 +14,10 @@ All builds run on that Mac, because they need the disc.
   `main.dol`/`StaticR.rel`, translator output (`generated/`), or the compiled game (`.wasm` and
   its loader `.js`). The translated code embeds the game's code and data, so it counts as game
   content too. `.gitignore` covers the usual paths; check `git status` before every commit.
-- The proof of concept stays **private**: served on `127.0.0.1` (`tools/serve.py`), or on
-  Cloudflare behind **Cloudflare Access** limited to the owner's email. Do not make it public.
+- The proof of concept normally stays **private**: localhost or Cloudflare Access.
+  **Current explicit owner exception (2026-10-01):** the owner is temporarily disabling Cloudflare
+  Access while testing. They confirmed this twice; leave that setting as they chose, and do not
+  recreate the Access app again without a new request. This does not authorise putting game data in git.
 - A later version asks each player for their own disc image in the browser (read locally, never
   uploaded). Skipping that step is only for the private proof of concept.
 - WiiCompiled is GPLv3, so the port's source changes are published (in the fork, below).
@@ -71,7 +73,9 @@ All builds run on that Mac, because they need the disc.
      at half the frame rate (about 30 FPS), with identical retained image bytes and playback duration.
      The owner confirmed smoother menus, but still reported stutter and slow transitions into races.
      A hosted trace showed a run of small staff-ghost reads roughly a second apart; the deployed loading
-     update packs small disc assets and reads ahead in videos. Actual post-update timing needs confirmation.
+     update packs small disc assets and reads ahead in videos. The owner confirms race loading is now fine and corrected the remaining symptom to stutter
+     between menus. The diagnostic capture shows a settled character menu near 60 FPS, with large
+     transition spikes dominated by DVD reads; it does not establish smooth browser presentation.
   3. M3 (players bring their own disc) is deferred at the owner's request.
 - Multiplayer details:
   - Each invite is an isolated Cloudflare Durable Object with up to 12 browser clients. TCP WFC
@@ -123,7 +127,7 @@ All builds run on that Mac, because they need the disc.
   source frames. `./tools/stage-web.sh --original-videos` restores the original previews for new
   sessions. Original `Assets/DATA` and racing physics are not modified.
   Tests: `python3 -m unittest discover -s tools -p 'test_web_menu_videos.py'` (4), and
-  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (14).
+  `node --test wiicompiled/runtime/src/platform/web/tests/mkw_fetchfs.test.mjs` (18).
 - Loading optimisation: `p [logicalPath, file-packs/hash.bin, offset, size]` records in manifest-v2
   map 143 unchanged assets of at most 64 KiB each into one 2,777,464-byte immutable download.
   The browser checks its SHA-256, shares the download, and serves file-relative slices. The pack
@@ -133,15 +137,24 @@ All builds run on that Mac, because they need the disc.
   share in-flight downloads, and failed prefetches retry on demand. SZS archives up to 16 MiB
   download at the first header read to avoid serial range round trips. Tests cover concurrent
   reads, corruption/bounds, retries, read-ahead, archive limits and file lifetime. This addresses
-  observed I/O stalls; it does not establish a stable 60 FPS rate in Firefox. The WebAssembly
-  build and 22 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
+  observed I/O stalls; the remaining reported symptom is a hitch during menu transitions. The WebAssembly
+  build and 26 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
   the actual remote R2 pack plus deployed loader were verified through a localhost-only Worker
   proxy, including a staff-ghost read using just the manifest and pack requests.
+- Diagnostic `?log` launches enable `MKW_WEB_PERF`. `web_performance.cpp` reports frame counts,
+  frames above 25/50/100 ms, average/maximum guest and graphics timings, and DVD read timing every
+  three seconds. This is opt-in instrumentation to distinguish the remaining selection-menu
+  hitch from one-time network loads; it is not itself a performance fix.
+- Menu warming fetches common menu/model archives, the first 16 MiB of the sound archive in
+  bounded ranges, and the first 2 MiB of each aliased menu preview. It starts during boot, uses
+  two background jobs and at most 64 MiB total (61.79 MiB for this disc). Demand reads share
+  the same resource cache and in-flight jobs; optional warmup failures retry on demand.
 - Hosting check after the loading update found that the earlier Access app was absent and the
   game page was reachable without login. Owner-only Access was restored, and unauthenticated
   requests again redirect to login. Its current app ID is `14f2f28e-05ef-4083-87f5-8030e31beac0`;
   the login team domain is now `athena-stuff.cloudflareaccess.com`. The reason for the previous
-  app removal was not determined. Verify Access after deployment; keep the room relay public.
+  owner then removed Access again and explicitly confirmed this is intentional during testing.
+  Leave it disabled until the owner requests otherwise; keep the room relay public.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
