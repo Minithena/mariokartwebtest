@@ -73,8 +73,8 @@ All builds run on that Mac, because they need the disc.
      at half the frame rate (about 30 FPS), with identical retained image bytes and playback duration.
      The owner confirmed smoother menus, but still reported stutter and slow transitions into races.
      A hosted trace showed a run of small staff-ghost reads roughly a second apart; the deployed loading
-     update packs small disc assets and reads ahead in videos. The owner confirms race loading is now fine and corrected the remaining symptom to stutter
-     between menus. The diagnostic capture shows a settled character menu near 60 FPS, with large
+     update packs small disc assets and reads ahead in videos. The owner confirms race loading
+     is now fine and corrected the remaining symptom to stutter between menus. The diagnostic capture shows a settled character menu near 60 FPS, with large
      transition spikes dominated by DVD reads; it does not establish smooth browser presentation.
   3. M3 (players bring their own disc) is deferred at the owner's request.
 - Multiplayer details:
@@ -137,8 +137,8 @@ All builds run on that Mac, because they need the disc.
   share in-flight downloads, and failed prefetches retry on demand. SZS archives up to 16 MiB
   download at the first header read to avoid serial range round trips. Tests cover concurrent
   reads, corruption/bounds, retries, read-ahead, archive limits and file lifetime. This addresses
-  observed I/O stalls; the remaining reported symptom is a hitch during menu transitions. The WebAssembly
-  build and 26 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
+  observed I/O stalls; the remaining reported symptom is a hitch during menu transitions.
+  The WebAssembly build and 26 loader/Worker tests pass. All 143 packed payloads match their source bytes, and
   the actual remote R2 pack plus deployed loader were verified through a localhost-only Worker
   proxy, including a staff-ghost read using just the manifest and pack requests.
 - Diagnostic `?log` launches enable `MKW_WEB_PERF`. `web_performance.cpp` reports frame counts,
@@ -149,12 +149,9 @@ All builds run on that Mac, because they need the disc.
   bounded ranges, and the first 2 MiB of each aliased menu preview. It starts during boot, uses
   two background jobs and at most 64 MiB total (61.79 MiB for this disc). Demand reads share
   the same resource cache and in-flight jobs; optional warmup failures retry on demand.
-- Hosting check after the loading update found that the earlier Access app was absent and the
-  game page was reachable without login. Owner-only Access was restored, and unauthenticated
-  requests again redirect to login. Its current app ID is `14f2f28e-05ef-4083-87f5-8030e31beac0`;
-  the login team domain is now `athena-stuff.cloudflareaccess.com`. The reason for the previous
-  owner then removed Access again and explicitly confirmed this is intentional during testing.
-  Leave it disabled until the owner requests otherwise; keep the room relay public.
+- Hosting tests: Access was restored after an unauthenticated check served the game page,
+  but the owner then confirmed they were deliberately removing it temporarily during testing.
+  Leave that setting as the owner chose; the explicit exception is recorded under Rules above.
 - Known: the page shows an original bunny backdrop; the owner's own picture is used when
   `site/public/game/background.jpg` exists (gitignored, never commit it).
 
