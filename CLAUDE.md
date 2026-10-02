@@ -40,11 +40,11 @@ A handover for whoever picks this up next is in [HANDOVER.md](HANDOVER.md).
 - **M2 done**: the build is hosted at `https://mkw-web.athenaaa.workers.dev` (see "Hosting").
 - **Multiplayer**: private invite rooms with direct entry into online setup work between two local
   clients; a fully driven race and a test across two physical machines are still unverified.
-- **Performance**: steady racing is 60 FPS (about 6.5 ms of CPU per frame on an Apple M5); the
+- **Performance**: steady racing is 60 FPS (about 4.4 ms of CPU per frame on an Apple M5 in the ghost replay, ~6 ms in a 12-kart Grand Prix); the
   frame loop and race-start fixes below are in. Slower hardware is untested.
 - M3 (players bring their own disc) is deferred at the owner's request.
 - Source of truth for code: the fork `Minithena/Wiicompiled`, branch `web` (submodule
-  `wiicompiled/`), plus this repository's branch `main` (it absorbed `claude/vigilant-ride-auy5y2` and the
+  `wiicompiled/`), plus this repository's branch `main` (the only branch; it absorbed `claude/vigilant-ride-auy5y2` and the
   `codex/*` branches on 2026-10-02).
 
 ### Build, run, test, deploy

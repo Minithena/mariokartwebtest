@@ -15,7 +15,7 @@ direct-entry multiplayer run; the owner plays it on a hosted URL.
 
 | Thing | Where |
 | --- | --- |
-| This repo (page tooling, Worker, notes) | `Minithena/mariokartwebtest`, branch `main` (since 2026-10-02 it contains `claude/vigilant-ride-auy5y2` and both `codex/*` branches; those old branch names still exist but are behind `main`) |
+| This repo (page tooling, Worker, notes) | `Minithena/mariokartwebtest`, branch `main`, the GitHub default (on 2026-10-02 it absorbed `claude/vigilant-ride-auy5y2` and both `codex/*` branches, which were then deleted) |
 | Runtime and renderer changes | fork `Minithena/Wiicompiled`, branch `web` (submodule `wiicompiled/`); upstream is `patchzyy/wiicompiled` |
 | Toolchain (not in git) | `../tools`: `emsdk` (Emscripten 6.0.10), `nodtool`; `dotnet@8` and cmake/ninja from Homebrew |
 | The owner's disc | `Mario Kart Wii (Europe, Australia) ... .wbfs` in the repo root, extracted to `wiicompiled/Assets/DATA`. Git-ignored; never commit, upload or describe contents |
@@ -28,6 +28,11 @@ off yourself and do not describe the hosted page as private. Never create a Work
 with wrangler (it would have no Access); renames go through the dashboard.
 
 ## Currently deployed
+
+**2026-10-02 (morning):** fork `web` `843c6e7`, this repo's `main`. Page, loader, `.wasm` (108,006,071 bytes) and
+`.data` uploaded with `deploy-web.py`; all four hosted files SHA-256-match the staged build. Worker and room relay
+unchanged. Earlier record below.
+
 
 Pushed and deployed on 2026-10-01: fork `web` at `52a5043`, this repo's branch at the commit that
 adds this file. Hosted `WiiCompiled.wasm` is 122,015,230 bytes; the loader and page HTML match the
@@ -304,7 +309,7 @@ Measured a 50cc Mushroom Cup Grand Prix (Mario, Standard Kart M, 11 opponents) i
   R; the controls panel said right-click did "Drift, hop, trick" and now lists "↑ Trick (in the air, as you leave a
   ramp)". Read from `GCNController::UpdateImpl`; not verified in play.
 
-## Race CPU pass, 2026-10-02 night (fork `web` e8b61f8 .. 843c6e7; pushed, NOT deployed)
+## Race CPU pass, 2026-10-02 night (fork `web` e8b61f8 .. 843c6e7; pushed and deployed 2026-10-02)
 
 Measured in the app pane (Apple M5, Chrome 152) on the Mario Circuit 1:44.178 ghost replay, `?log`
 `busy_per_frame` over the race windows; baseline is fork `a033aa6`. One run each unless noted.
