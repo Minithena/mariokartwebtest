@@ -15,7 +15,7 @@ direct-entry multiplayer run; the owner plays it on a hosted URL.
 
 | Thing | Where |
 | --- | --- |
-| This repo (page tooling, Worker, notes) | `Minithena/mariokartwebtest`, branch `claude/vigilant-ride-auy5y2` (not merged to `main`) |
+| This repo (page tooling, Worker, notes) | `Minithena/mariokartwebtest`, branch `main` (since 2026-10-02 it contains `claude/vigilant-ride-auy5y2` and both `codex/*` branches; those old branch names still exist but are behind `main`) |
 | Runtime and renderer changes | fork `Minithena/Wiicompiled`, branch `web` (submodule `wiicompiled/`); upstream is `patchzyy/wiicompiled` |
 | Toolchain (not in git) | `../tools`: `emsdk` (Emscripten 6.0.10), `nodtool`; `dotnet@8` and cmake/ninja from Homebrew |
 | The owner's disc | `Mario Kart Wii (Europe, Australia) ... .wbfs` in the repo root, extracted to `wiicompiled/Assets/DATA`. Git-ignored; never commit, upload or describe contents |
@@ -303,6 +303,73 @@ Measured a 50cc Mushroom Cup Grand Prix (Mario, Standard Kart M, 11 opponents) i
 - **Tricks:** the web build presents a GameCube controller (no motion option). A trick is the D-pad (arrow keys), not
   R; the controls panel said right-click did "Drift, hop, trick" and now lists "↑ Trick (in the air, as you leave a
   ramp)". Read from `GCNController::UpdateImpl`; not verified in play.
+
+## Race CPU pass, 2026-10-02 night (fork `web` e8b61f8 .. 843c6e7; pushed, NOT deployed)
+
+Measured in the app pane (Apple M5, Chrome 152) on the Mario Circuit 1:44.178 ghost replay, `?log`
+`busy_per_frame` over the race windows; baseline is fork `a033aa6`. One run each unless noted.
+
+| Build | CPU per frame | Renderer seal | Notes |
+| --- | --- | --- | --- |
+| a033aa6 (baseline) | 5.88 ms | 1.39 ms | |
+| e8b61f8 | 4.33-4.41 ms | 0.07 ms | -25%; menus 4.5 -> 3.0 ms |
+| ae53a10 | 4.55-4.58 ms | 0.07 ms | same within noise; 12-kart 150cc GP ~6.0 ms |
+
+1. **Staging copy (the big one).** emdawnwebgpu backs a write-mode `GetMappedRange` with its own wasm-heap block
+   and copies the whole block into the JS mapping on `Unmap`. Aurora mapped its 37 MiB staging buffer every frame,
+   so every frame did a 37 MiB `memalign` + copy + `free` however little was drawn. The web build now records into one
+   persistent heap block and copies only the used bytes with `WriteMappedRange` (`gfx/common.cpp`,
+   `g_webStagingShadow`). Expect a larger gain on machines with slower memory than the M5.
+   Tried and rejected: `queue.writeBuffer` per ring and no staging buffers at all (4.88 ms: each call costs more on
+   the game thread than writing into the mapped buffer).
+2. **Resolved guest ranges.** The translator groups accesses through one base register into a resolved range;
+   `ResolveRangeHost` returned null on wasm, so ~180k such accesses went through an out-of-line fallback. It now
+   resolves through the 1 MiB bias tables (`memory_access.h`). Safe because ranges end at every memory-epoch boundary
+   (calls that can suspend, switch threads or run guest code) and `RegisterDeferredRead` has no callers. With the
+   sparse sub-page store tier moved out of line, `WiiCompiled.wasm` went from 122.0 MB to 108.0 MB.
+3. **Compact staging rings** (web only): 2/6/1/3 MiB instead of 3/24/2/8 MiB, about 3x the largest per-frame use
+   seen in a 12-kart Grand Prix (566 KiB / 1.8 MiB / 367 KiB / 836 KiB). No CPU change on the M5; saves ~75 MB of
+   GPU buffers and 25 MB of wasm heap, and the browser no longer has a 37 MiB mapped range to move per frame.
+   Overflow splits the batch as before; `?log` prints `[web-perf] staging high water ... splits=` (0 in races).
+4. **Pipeline seed 1,199 -> 1,784** (`runtime/assets/pipeline/initial_pipeline_cache.db`): merged the native
+   cache from the M0 session (260 new) and this pane's `web_pipelines.bin` (325 new, all `msaaSamples=1`). In a
+   fresh origin, boot + menus + the whole ghost race now record **0** on-demand pipelines (~180 before) and there
+   was no slow frame during the race. Warm-cache prewarm: 1,706 unique pipelines in 2.8 s. Cold-cache boot is
+   longer in proportion; unmeasured. To repeat: read `WiiCompiled/Cache/web_pipelines.bin` from OPFS on a
+   non-game page of the same origin (records: u32 type, u32 version, u64 hash, u32 size, config blob; the loader
+   re-checks the XXH3 hash) and insert rows not yet in the seed.
+
+5. **Course fetched at the pick** (`web_race_warm.cpp` `OnFrame`, called from `GX__CopyDisp`): RaceConfig keeps
+   the race being set up at +0xC10 (course ID at +0xB48; the race scenario at +0x20 is copied from it at load). A
+   new value stable for 30 frames (the boot default is skipped) posts `Race/Course/<name>.szs` over the existing
+   prefetch channel. At 150 ms simulated latency, confirming Moo Moo Meadows fetched `farm_course.szs` at once and
+   the race load read it with no stall. The attract demo also triggers it for its own courses (harmless: it loads
+   them anyway). Course music is NOT prefetched: only 14 `n_*_n.brstm` names exist for 42 courses, so the mapping
+   is not derivable from the course name; the first stream read is still one round trip (169 ms at 150 ms).
+6. `?log` adds `[web-perf] memory slow paths per frame` (sparse sub-page stores, slow reads/writes, resolved-range
+   fallbacks): all 0 once a race runs, so the guest memory path is clean.
+
+Tried and rejected this night: translated shards at `-O3` (4.54 vs 4.55-4.66 ms, no change; note the target's
+`-O2` overrides the global `-O3` because it comes later on the command line); `queue.writeBuffer` (above). The
+benchmark's `autodrive-v1` recipe walks the single-player menus by itself (A pulses) into a 50cc Mushroom Cup Grand
+Prix, but its fixed weave wedges the kart against the first wall of Luigi Circuit, so it is useless for item or lap
+coverage. Replays loop straight back to the countdown and hide the timer, so a replay cannot show 1:44.178; the loops
+repeated at the same ~115 s cadence (the ghost completes the course), and no change touched FP semantics.
+
+Where the remaining time goes (diagnostic build with `web_guest_profile.h` set to 1; `[web-gprof]` self and
+inclusive profiles, attribute host work to the guest function that called it): in the ghost race ~42% of the
+frame is the idle VI wait and ~34% the present call (mostly pacing). Simulation ~12% (~2 ms: race instances,
+kart physics, scene-graph update) and drawing ~9% (~1.5 ms: nw4r model/material drawing; the GX display-list
+HLE shows as `ResShp::CallPrePrimitiveDisplayList` self time, ~0.4 ms). No single guest hotspot is left.
+
+Measuring recipe that worked: `race_benchmark.py snapshot` per build, serve each with `record --mode ghost` (a
+helper restarted it per run), drive the menus with the benchmark panel's **Confirm** button and the arrow keys
+(the panel's held direction buttons move two rows), add `&log` for diagnostics. **Touch the snapshot's
+`WiiCompiled.*` before serving an older build after a newer one:** `serve.py` answers `If-Modified-Since` with
+304, so the browser mixed a cached newer `.wasm` with an older loader (`LinkError ... emwgpuBufferWriteMappedRange`).
+The benchmark's own "busy" (interval minus VI idle) still counts the present pacing wait, so it barely moves when
+renderer work shrinks; use `?log` `busy_per_frame` for CPU. The pane's screenshots lag the canvas by tens of
+seconds at boot while the game already runs at 60 FPS; the game boots in ~13 s.
 
 ## Known issues and what to do next
 

@@ -44,7 +44,8 @@ A handover for whoever picks this up next is in [HANDOVER.md](HANDOVER.md).
   frame loop and race-start fixes below are in. Slower hardware is untested.
 - M3 (players bring their own disc) is deferred at the owner's request.
 - Source of truth for code: the fork `Minithena/Wiicompiled`, branch `web` (submodule
-  `wiicompiled/`), plus this repository's branch `claude/vigilant-ride-auy5y2`.
+  `wiicompiled/`), plus this repository's branch `main` (it absorbed `claude/vigilant-ride-auy5y2` and the
+  `codex/*` branches on 2026-10-02).
 
 ### Build, run, test, deploy
 
