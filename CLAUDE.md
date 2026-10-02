@@ -171,6 +171,10 @@ All web code is in `wiicompiled/runtime/src/platform/web/` or behind `__EMSCRIPT
 
 ### Diagnostics (`?log`)
 
+Players: **Problems -> Save log** downloads the page's captured console plus browser/GPU/display details (room code
+scrubbed); they DM it to hiemal on Discord. The 3 s summaries below are always on; **Detailed logging** (or `?log`)
+adds the `[web-prof]` profiler; only `?log` forwards to the server.
+
 `?log` forwards the console to `serve.py` stdout (or `/log` on the Worker, readable with
 `wrangler tail mkw-web --format json`) and turns on, every 3 s: `[web-perf]` frame counts, frames
 over 25/50/100 ms, per-bucket timings, the present split (end_frame / schedule wait / yield), map

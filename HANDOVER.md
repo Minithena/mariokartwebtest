@@ -29,6 +29,15 @@ with wrangler (it would have no Access); renames go through the dashboard.
 
 ## Currently deployed
 
+**2026-10-02 (Save log):** fork `web` `40ff69a`. Page and `.wasm` changed; all three of page, loader and `.wasm`
+SHA-256-match the staged build. Worker and room relay unchanged. Players press **Problems -> Save log** (controls
+panel, or beside Copy in the error details) and DM the `.txt` to hiemal on Discord. The page always keeps its console
+output (first 400 lines plus a rolling ~8,000 / 3 MB), and the 3 s `[web-perf]`/`[web-pace]` summaries are now on
+for everyone (`MKW_WEB_PERF=1` from the page). **Detailed logging** (checkbox, remembered in localStorage) or
+`?log` adds the sampling profiler (`MKW_WEB_PROFILE`); only `?log` also forwards the console to `/log`. Measured cost
+of the profiler on the attract video: none beyond page-load noise (6.1 ms off, 5.5 ms on, 60 FPS both). To read the
+log text in a page without downloading: `buildLogText(60)`.
+
 **2026-10-02 (morning):** fork `web` `843c6e7`, this repo's `main`. Page, loader, `.wasm` (108,006,071 bytes) and
 `.data` uploaded with `deploy-web.py`; all four hosted files SHA-256-match the staged build. Worker and room relay
 unchanged. Earlier record below.
